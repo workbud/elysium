@@ -1,0 +1,47 @@
+{
+	"$schema": "https://turbo.build/schema.json",
+	"globalDependencies": ["tsconfig.base.json"],
+	"globalEnv": ["NODE_ENV", "BUN_ENV"],
+	"tasks": {
+		"build": {
+			"dependsOn": ["^build"],
+			"inputs": ["src/**/*.ts", "tsconfig.json", "package.json"],
+			"outputs": ["dist/**"],
+			"outputLogs": "new-only"
+		},
+		"build:js": {
+			"dependsOn": ["^build"],
+			"inputs": ["src/**/*.ts", "tsconfig.json"],
+			"outputs": ["dist/**/*.js"]
+		},
+		"build:types": {
+			"dependsOn": ["^build"],
+			"inputs": ["src/**/*.ts", "tsconfig.json"],
+			"outputs": ["dist/**/*.d.ts"]
+		},
+		"test": {
+			"inputs": ["src/**/*.ts", "tests/**/*.ts", "package.json"],
+			"outputs": []
+		},
+		"test:coverage": {
+			"inputs": ["src/**/*.ts", "tests/**/*.ts", "package.json"],
+			"outputs": ["coverage/**"]
+		},
+		"lint": {
+			"inputs": ["src/**/*.ts", "*.config.*"],
+			"outputs": []
+		},
+		"typecheck": {
+			"dependsOn": ["^build"],
+			"inputs": ["src/**/*.ts", "tsconfig.json"],
+			"outputs": []
+		},
+		"clean": {
+			"cache": false
+		},
+		"dev": {
+			"cache": false,
+			"persistent": true
+		}
+	}
+}

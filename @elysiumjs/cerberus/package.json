@@ -7,15 +7,16 @@
 	"author": "Workbud Technologies Inc.",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/Workerly/elysium"
+		"url": "https://github.com/workbud/elysium"
 	},
-	"homepage": "https://github.com/Workerly/elysium",
+	"homepage": "https://github.com/workbud/elysium",
 	"scripts": {
 		"format": "prettier --write \"./src/**/*.ts\"",
 		"clean": "rimraf dist",
 		"build:js": "bun build ./src/index.ts --outdir ./dist --target bun --packages external --root ./src --minify",
 		"build:ts": "tsc",
 		"build": "bun run clean && bun run build:js && bun run build:ts",
+		"typecheck": "tsc --noEmit",
 		"prepublishOnly": "bun run build"
 	},
 	"keywords": [
@@ -35,13 +36,9 @@
 		"@casl/ability": "^6.7.3"
 	},
 	"devDependencies": {
-		"@ianvs/prettier-plugin-sort-imports": "^4.4.2",
-		"@types/bun": "latest",
-		"rimraf": "^6.0.1",
-		"type-fest": "^4.41.0"
+		"@elysiumjs/core": "workspace:*"
 	},
 	"peerDependencies": {
-		"@elysiumjs/core": "latest",
-		"typescript": "^5.8.3"
+		"@elysiumjs/core": "workspace:^"
 	}
 }

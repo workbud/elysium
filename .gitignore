@@ -42,3 +42,6 @@
 **/*.log
 **/package-lock.json
 **/*.bun
+
+# Turborepo
+.turbo

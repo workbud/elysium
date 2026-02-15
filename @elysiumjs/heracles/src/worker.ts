@@ -106,9 +106,9 @@ export type QueueState = {
 	activeJobs: Map<string, QueuedJob>;
 
 	/**
-	 * The number of jobs currently being processed.
+	 * The jobs that are waiting to be retried.
 	 */
-	processing: number;
+	retryingJobs: Map<string, QueuedJob>;
 
 	/**
 	 * Whether the queue is currently paused.

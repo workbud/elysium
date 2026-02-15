@@ -1,18 +1,29 @@
 {
 	"name": "@elysiumjs/hermes",
-	"version": "0.1.1",
-	"module": "index.ts",
+	"version": "0.2.0",
 	"type": "module",
-	"devDependencies": {
-		"@ianvs/prettier-plugin-sort-imports": "^4.4.1",
-		"@types/bun": "latest",
-		"type-fest": "^4.41.0"
-	},
-	"peerDependencies": {
-		"@elysiumjs/core": "latest",
-		"typescript": "^5.8.3"
+	"module": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"sideEffects": ["./src/index.ts"],
+	"scripts": {
+		"format": "prettier --write \"./src/**/*.ts\"",
+		"clean": "rimraf dist",
+		"build:js": "bun build ./src/index.ts --outdir ./dist --target bun --packages external --root ./src --minify",
+		"build:ts": "tsc",
+		"build": "bun run clean && bun run build:js && bun run build:ts",
+		"test": "bun test",
+		"test:coverage": "bun test --coverage",
+		"typecheck": "tsc --noEmit",
+		"prepublishOnly": "bun run build"
 	},
 	"dependencies": {
-		"pino": "^9.6.0"
+		"pino": "^10.0.0",
+		"pino-pretty": "^13.0.0"
+	},
+	"devDependencies": {
+		"@elysiumjs/core": "workspace:*"
+	},
+	"peerDependencies": {
+		"@elysiumjs/core": "workspace:^"
 	}
 }

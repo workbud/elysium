@@ -4,18 +4,12 @@
 	"type": "module",
 	"private": true,
 	"imports": {
-		"#root/*": "./src/*.ts"
-	},
-	"devDependencies": {
-		"@types/bun": "latest",
-		"@ianvs/prettier-plugin-sort-imports": "^4.4.1"
-	},
-	"peerDependencies": {
-		"typescript": "^5.8.3"
+		"#hero/*": "./src/modules/hero/*.ts"
 	},
 	"dependencies": {
-		"@elysiumjs/core": "file:../@elysiumjs/core",
-		"@elysiumjs/styx": "file:../@elysiumjs/styx",
-		"radash": "^9.5.0"
+		"@elysiumjs/core": "workspace:^",
+		"@elysiumjs/hermes": "workspace:^",
+		"@elysiumjs/styx": "workspace:^",
+		"radash": "catalog:"
 	}
 }
