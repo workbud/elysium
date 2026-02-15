@@ -15,15 +15,38 @@
 import type { JobClass } from '../job';
 import type { JobDispatchOptions } from '../queue';
 import type { TransportEvent } from '../transport';
-import type { Worker, WorkerQueueOptions } from '../worker';
+import type { QueuedJob, QueueState, Worker, WorkerQueueOptions } from '../worker';
 
-import { Service } from '@elysiumjs/core';
+import { Redis, Service } from '@elysiumjs/core';
+import { RedisClient } from 'bun';
 
 import { Job, JobOverlapBehavior, JobStatus, WithId } from '../job';
 import { TransportMode } from '../transport';
 import { RedisTransport } from '../transports/redis.transport';
 import { getJobMetadata } from '../utils';
 import { BaseWorker } from './base.worker';
+
+/**
+ * Job batch for processing
+ * @author Axel Nana <axel.nana@workbud.com>
+ */
+interface JobBatch {
+	queue: string;
+	jobs: QueuedJob[];
+	timestamp: number;
+}
+
+/**
+ * Worker metrics
+ * @author Axel Nana <axel.nana@workbud.com>
+ */
+interface WorkerMetrics {
+	jobsProcessed: number;
+	jobsFailed: number;
+	jobsRetried: number;
+	averageProcessingTime: number;
+	lastProcessedAt?: Date;
+}
 
 /**
  * Worker implementation that uses Redis for communication.
@@ -42,35 +65,134 @@ export class RedisWorker extends BaseWorker<RedisTransport> {
 	private registeredQueues: Set<string> = new Set();
 
 	/**
+	 * Job batches pending processing
+	 */
+	private pendingBatches: Map<string, JobBatch> = new Map();
+
+	/**
+	 * Batch processing timer
+	 */
+	private batchTimer?: ReturnType<typeof setInterval>;
+
+	/**
+	 * Worker metrics
+	 */
+	private metrics: WorkerMetrics = {
+		jobsProcessed: 0,
+		jobsFailed: 0,
+		jobsRetried: 0,
+		averageProcessingTime: 0
+	};
+
+	/**
+	 * Metrics reporting client
+	 */
+	private metricsClient?: RedisClient;
+
+	/**
+	 * Metrics reporting timer
+	 */
+	private metricsTimer?: ReturnType<typeof setInterval>;
+
+	/**
+	 * Maximum batch size for processing
+	 */
+	private readonly maxBatchSize: number;
+
+	/**
+	 * Batch collection interval in milliseconds
+	 */
+	private readonly batchInterval: number;
+
+	/**
 	 * Creates a new RedisWorker instance
 	 * @param connectionName Name of the Redis connection to use
-	 * @param options Additional options for the Redis transport
+	 * @param options Additional options
 	 */
-	constructor(connectionName: string = 'default', options: Record<string, any> = {}) {
+	constructor(
+		connectionName: string = 'default',
+		options: {
+			id?: string;
+			maxBatchSize?: number;
+			batchInterval?: number;
+			enableMetrics?: boolean;
+			[key: string]: any;
+		} = {}
+	) {
 		super(options.id);
 
+		this.maxBatchSize = options.maxBatchSize || 10;
+		this.batchInterval = options.batchInterval || 100;
+
+		// Initialize transport
 		this.transport = new RedisTransport(TransportMode.CONSUMER, {
 			connection: connectionName,
 			consumerName: `worker-${this.id}`,
+			batchSize: this.maxBatchSize,
 			...options
 		});
 
 		// Set up message handling
 		this.transport.onMessage(this.handleTransportMessage.bind(this));
 
-		this.debug(`RedisWorker ${this.id} created with connection: ${connectionName}`);
+		// Initialize metrics client if enabled
+		if (options.enableMetrics) {
+			this.initializeMetrics(connectionName);
+		}
+
+		this.debug(`RedisWorker ${this.id} created with batch size: ${this.maxBatchSize}`);
 	}
 
 	/**
-	 * Start the worker and begin processing jobs
+	 * Initialize metrics reporting
+	 */
+	private async initializeMetrics(connectionName: string): Promise<void> {
+		this.metricsClient = await Redis.getConnection(connectionName).duplicate();
+	}
+
+	/**
+	 * Report worker metrics
+	 */
+	private async reportMetrics(): Promise<void> {
+		if (!this.metricsClient || !this.metricsClient.connected) {
+			return;
+		}
+
+		const metricsKey = `worker:${this.id}:metrics`;
+
+		try {
+			await this.metricsClient.hmset(metricsKey, [
+				'jobsProcessed',
+				this.metrics.jobsProcessed.toString(),
+				'jobsFailed',
+				this.metrics.jobsFailed.toString(),
+				'jobsRetried',
+				this.metrics.jobsRetried.toString(),
+				'averageProcessingTime',
+				this.metrics.averageProcessingTime.toString(),
+				'lastProcessedAt',
+				(this.metrics.lastProcessedAt || new Date()).toISOString(),
+				'timestamp',
+				Date.now().toString()
+			]);
+
+			// Expire after 1 hour
+			await this.metricsClient.expire(metricsKey, 3600);
+		} catch (error) {
+			this.error(`Failed to report metrics: ${error}`);
+		}
+	}
+
+	/**
+	 * Start the worker
 	 */
 	public async start(): Promise<void> {
-		// Call parent implementation first
-		await super.start();
-
 		if (this.isRunning) {
 			return;
 		}
+
+		// Call parent implementation
+		await super.start();
 
 		this.isRunning = true;
 
@@ -82,8 +204,21 @@ export class RedisWorker extends BaseWorker<RedisTransport> {
 		// Start the transport
 		await this.transport.start();
 
-		// Register worker with queues
+		// Connect metrics client
+		if (this.metricsClient) {
+			// Report metrics every 10 seconds
+			this.metricsTimer = setInterval(() => {
+				this.reportMetrics();
+			}, 10000);
+
+			await this.metricsClient.connect();
+		}
+
+		// Register worker
 		await this.transport.registerWorker(this.id, Array.from(this.registeredQueues));
+
+		// Start batch processing timer
+		this.startBatchProcessing();
 
 		this.info(
 			`Redis worker ${this.id} started for queues: ${Array.from(this.registeredQueues).join(', ')}`
@@ -97,6 +232,14 @@ export class RedisWorker extends BaseWorker<RedisTransport> {
 	public async stop(force: boolean = false): Promise<void> {
 		this.isRunning = false;
 
+		// Stop batch processing
+		this.stopBatchProcessing();
+
+		// Process remaining batches unless forced
+		if (!force) {
+			await this.processAllPendingBatches();
+		}
+
 		// Call parent implementation
 		await super.stop(force);
 
@@ -106,197 +249,185 @@ export class RedisWorker extends BaseWorker<RedisTransport> {
 		// Stop the transport
 		await this.transport.stop();
 
+		// Close metrics client
+		if (this.metricsClient) {
+			this.metricsClient.close();
+
+			clearInterval(this.metricsTimer);
+			this.metricsClient = undefined;
+		}
+
 		this.info(`Redis worker ${this.id} stopped`);
 	}
 
 	/**
-	 * Process the next job in a queue, respecting overlap settings
-	 * @param queueName Name of the queue
+	 * Start batch processing timer
 	 */
-	protected async processNextJob(queueName: string): Promise<void> {
-		const queue = this.queues.get(queueName);
-		if (!queue || queue.paused || queue.processing >= queue.options.concurrency!) {
-			return;
+	private startBatchProcessing(): void {
+		this.batchTimer = setInterval(() => {
+			this.processBatches();
+		}, this.batchInterval);
+	}
+
+	/**
+	 * Stop batch processing timer
+	 */
+	private stopBatchProcessing(): void {
+		if (this.batchTimer) {
+			clearInterval(this.batchTimer);
+			this.batchTimer = undefined;
+		}
+	}
+
+	/**
+	 * Process all pending batches
+	 */
+	private async processAllPendingBatches(): Promise<void> {
+		for (const [_, batch] of this.pendingBatches) {
+			if (batch.jobs.length > 0) {
+				await this.processBatch(batch);
+			}
 		}
 
-		// Find the next eligible job based on overlap behavior
-		let eligibleJobIndex = -1;
+		this.pendingBatches.clear();
+	}
 
-		const now = new Date();
+	/**
+	 * Process batches that are ready
+	 */
+	private async processBatches(): Promise<void> {
+		const now = Date.now();
 
-		for (let i = 0; i < queue.jobs.length; i++) {
-			const queuedJob = queue.jobs[i];
+		for (const [queueName, batch] of this.pendingBatches) {
+			const queue = this.queues.get(queueName);
+			if (!queue) continue;
 
-			// Skip jobs scheduled for the future
-			if (queuedJob.scheduledFor && queuedJob.scheduledFor > now) {
-				continue;
+			// Process if batch is full or enough time has passed
+			const shouldProcess =
+				batch.jobs.length >= this.maxBatchSize ||
+				(batch.jobs.length > 0 && now - batch.timestamp > this.batchInterval);
+
+			if (shouldProcess) {
+				// Remove from pending and process
+				this.pendingBatches.delete(queueName);
+				await this.processBatch(batch);
 			}
+		}
+	}
 
-			// Remove cancelled jobs
-			if (queuedJob.job.status === JobStatus.CANCELLED) {
-				eligibleJobIndex = i;
-				break;
-			}
+	/**
+	 * Process a batch of jobs
+	 */
+	private async processBatch(batch: JobBatch): Promise<void> {
+		const queue = this.queues.get(batch.queue);
+		if (!queue || queue.paused) return;
 
-			// Check job overlap constraints
-			const jobOptions = queuedJob.job.constructor as JobClass<Job>;
-			const metadata = getJobMetadata(jobOptions);
+		const startTime = Date.now();
 
-			// If this job has NO_OVERLAP behavior, check if another job with the same ID is running
+		// Group jobs by overlap behavior
+		const overlapGroups = new Map<string, QueuedJob[]>();
+		const regularJobs: QueuedJob[] = [];
+
+		for (const job of batch.jobs) {
+			const metadata = getJobMetadata(job.job.constructor as JobClass<Job>);
+
 			if (metadata?.overlapBehavior === JobOverlapBehavior.NO_OVERLAP) {
-				const isLocked = await this.transport.isJobLocked(queuedJob.job.id, queueName);
+				const key = job.job.id;
+				if (!overlapGroups.has(key)) {
+					overlapGroups.set(key, []);
+				}
+				overlapGroups.get(key)!.push(job);
+			} else {
+				regularJobs.push(job);
+			}
+		}
 
-				if (isLocked) {
-					// Skip this job for now, as another job with the same ID is running
-					continue;
+		// Process regular jobs in parallel
+		const regularPromises = regularJobs.map((job) => this.processJobInternal(job, batch.queue));
+
+		// Process NO_OVERLAP jobs sequentially by ID
+		const overlapPromises: Promise<void>[] = [];
+		for (const [_, jobs] of overlapGroups) {
+			overlapPromises.push(this.processOverlapJobs(jobs, batch.queue));
+		}
+
+		// Wait for all jobs to complete
+		await Promise.all([...regularPromises, ...overlapPromises]);
+
+		// Update metrics
+		const processingTime = Date.now() - startTime;
+		this.updateMetrics(batch.jobs.length, processingTime);
+
+		this.debug(
+			`Processed batch of ${batch.jobs.length} jobs from queue '${batch.queue}' in ${processingTime}ms`
+		);
+	}
+
+	/**
+	 * Process NO_OVERLAP jobs sequentially
+	 */
+	private async processOverlapJobs(jobs: QueuedJob[], queueName: string): Promise<void> {
+		for (const job of jobs) {
+			const acquired = await this.transport.acquireJobLock(job.job.id, queueName);
+
+			if (acquired) {
+				try {
+					await this.processJobInternal(job, queueName);
+				} finally {
+					const metadata = getJobMetadata(job.job.constructor as JobClass<Job>);
+
+					// Release lock after delay if configured
+					if (metadata?.overlapDelay && metadata.overlapDelay > 0) {
+						setTimeout(() => {
+							this.transport.releaseJobLock(job.job.id, queueName);
+						}, metadata.overlapDelay);
+					} else {
+						await this.transport.releaseJobLock(job.job.id, queueName);
+					}
+				}
+			} else {
+				// Re-queue the job
+				const queue = this.queues.get(queueName);
+				if (queue) {
+					queue.jobs.push(job);
 				}
 			}
-
-			// This job is eligible for processing
-			eligibleJobIndex = i;
-			break;
 		}
+	}
 
-		// If no eligible job was found, return
-		if (eligibleJobIndex === -1) {
-			return;
-		}
+	/**
+	 * Process a single job internally
+	 */
+	private async processJobInternal(queuedJob: QueuedJob, queueName: string): Promise<void> {
+		const queue = this.queues.get(queueName);
+		if (!queue) return;
 
-		// Get the eligible job and remove it from the queue
-		const queuedJob = queue.jobs.splice(eligibleJobIndex, 1)[0];
-
-		if (!queuedJob) {
-			return;
-		}
-
-		// Skip cancelled jobs
-		if (queuedJob.job.status === JobStatus.CANCELLED) {
-			this.info(`Skipping cancelled job ${queuedJob.job.id}`);
-
-			await this.sendJobStatusUpdate(
-				queuedJob.job.id,
-				queuedJob.job.dispatchId,
-				queueName,
-				JobStatus.CANCELLED
-			);
-
-			return this.processQueueJobs(queueName);
-		}
-
-		// If job has NO_OVERLAP behavior, acquire a lock
-		const jobOptions = queuedJob.job.constructor as JobClass<Job>;
-		const metadata = getJobMetadata(jobOptions);
-
-		if (metadata?.overlapBehavior === JobOverlapBehavior.NO_OVERLAP) {
-			const transport = this.transport as RedisTransport;
-			const lockAcquired = await transport.acquireJobLock(queuedJob.job.id, queueName);
-
-			if (!lockAcquired) {
-				// Another worker acquired the lock first, put the job back in the queue
-				queue.jobs.push(queuedJob);
-				return;
-			}
-		}
-
-		// Track job as active
+		// Track as active
 		queue.activeJobs.set(queuedJob.job.id, queuedJob);
-		queue.processing++;
 
-		// Update job status to running
+		// Update status to running
 		await this.sendJobStatusUpdate(
 			queuedJob.job.id,
 			queuedJob.job.dispatchId,
 			queueName,
-			JobStatus.RUNNING,
-			undefined
+			JobStatus.RUNNING
 		);
 
 		try {
-			this.debug(
-				`Processing job ${queuedJob.job.id} (dispatch: ${queuedJob.job.dispatchId}) from queue '${queueName}'`
-			);
-
 			await queuedJob.job.run();
 
-			// Handle job completion based on status
-			if (queuedJob.job.status === JobStatus.FAILED) {
-				// Get max retries
-				const maxRetries =
-					queuedJob.maxRetries !== undefined ? queuedJob.maxRetries : queue.options.maxRetries!;
-
-				if (queuedJob.retries < maxRetries) {
-					// Increment retry count
-					queuedJob.retries++;
-					queuedJob.job.incrementRetries();
-					this.warning(
-						`Job ${queuedJob.job.id} failed, retrying (${queuedJob.retries}/${maxRetries})`
-					);
-
-					// Get retry delay
-					const retryDelay =
-						queuedJob.retryDelay !== undefined ? queuedJob.retryDelay : queue.options.retryDelay!;
-
-					// Update job status to scheduled for retry
-					await this.sendJobStatusUpdate(
-						queuedJob.job.id,
-						queuedJob.job.dispatchId,
-						queueName,
-						JobStatus.SCHEDULED_FOR_RETRY,
-						queuedJob.job.lastError?.message
-					);
-
-					// Schedule retry
-					setTimeout(() => {
-						if (queuedJob.job.status !== JobStatus.CANCELLED) {
-							queue.jobs.push(queuedJob);
-							this.processQueueJobs(queueName);
-						} else {
-							this.info(`Skipping cancelled job ${queuedJob.job.id} during retry delay`);
-							this.sendJobStatusUpdate(
-								queuedJob.job.id,
-								queuedJob.job.dispatchId,
-								queueName,
-								JobStatus.CANCELLED
-							);
-						}
-					}, retryDelay);
-				} else {
-					// Job failed after all retries
-					this.error(
-						`Job ${queuedJob.job.id} failed after ${queuedJob.retries} retries (max: ${maxRetries}): ${queuedJob.job.lastError?.message}`
-					);
-
-					// Update job status to failed
-					await this.sendJobStatusUpdate(
-						queuedJob.job.id,
-						queuedJob.job.dispatchId,
-						queueName,
-						JobStatus.FAILED,
-						queuedJob.job.lastError?.message
-					);
-
-					// Pause queue if configured to do so
-					if (queue.options.pauseOnError) {
-						this.pause(queueName);
-						this.warning(`Queue '${queueName}' paused due to job failure`);
-					}
-				}
-			} else if (queuedJob.job.status === JobStatus.COMPLETED) {
-				// Job completed successfully
-				this.success(`Job ${queuedJob.job.id} completed successfully`);
-
-				// Update job status to completed
+			// Handle job result
+			if (queuedJob.job.status === JobStatus.COMPLETED) {
+				this.metrics.jobsProcessed++;
 				await this.sendJobStatusUpdate(
 					queuedJob.job.id,
 					queuedJob.job.dispatchId,
 					queueName,
 					JobStatus.COMPLETED
 				);
-			} else if ((queuedJob.job.status as JobStatus) === JobStatus.CANCELLED) {
-				// Job was cancelled while running
-				this.info(`Job ${queuedJob.job.id} cancelled while running`);
-
-				// Update job status to cancelled
+			} else if (queuedJob.job.status === JobStatus.FAILED) {
+				await this.handleJobFailure(queuedJob, queue, queueName);
+			} else if (queuedJob.job.status === JobStatus.CANCELLED) {
 				await this.sendJobStatusUpdate(
 					queuedJob.job.id,
 					queuedJob.job.dispatchId,
@@ -305,71 +436,157 @@ export class RedisWorker extends BaseWorker<RedisTransport> {
 				);
 			}
 		} catch (error) {
-			// Handle unexpected errors during job execution
-			this.error(`Unexpected error processing job ${queuedJob.job.id}: ${error}`);
+			this.error(`Error processing job ${queuedJob.job.id}: ${error}`);
+			queuedJob.job.fail(error instanceof Error ? error : new Error(String(error)));
+			await this.handleJobFailure(queuedJob, queue, queueName);
+		} finally {
+			// Remove from active jobs
+			queue.activeJobs.delete(queuedJob.job.id);
+			this.metrics.lastProcessedAt = new Date();
+		}
+	}
 
-			// Update job status to failed
+	/**
+	 * Handle job failure with retry logic
+	 */
+	private async handleJobFailure(
+		queuedJob: QueuedJob,
+		queue: QueueState,
+		queueName: string
+	): Promise<void> {
+		const maxRetries =
+			queuedJob.maxRetries !== undefined ? queuedJob.maxRetries : queue.options.maxRetries!;
+
+		if (queuedJob.retries < maxRetries) {
+			// Retry the job
+			queuedJob.retries++;
+			queuedJob.job.incrementRetries();
+			this.metrics.jobsRetried++;
+
+			const retryDelay =
+				queuedJob.retryDelay !== undefined ? queuedJob.retryDelay : queue.options.retryDelay!;
+
+			await this.sendJobStatusUpdate(
+				queuedJob.job.id,
+				queuedJob.job.dispatchId,
+				queueName,
+				JobStatus.SCHEDULED_FOR_RETRY,
+				queuedJob.job.lastError?.message
+			);
+
+			queue.retryingJobs.set(queuedJob.job.id, queuedJob);
+
+			// Schedule retry
+			setTimeout(() => {
+				if (queuedJob.job.status !== JobStatus.CANCELLED) {
+					this.addJobToBatch(queuedJob, queueName);
+				}
+
+				queue.retryingJobs.delete(queuedJob.job.id);
+			}, retryDelay);
+		} else {
+			// Job failed after all retries
+			this.metrics.jobsFailed++;
 			await this.sendJobStatusUpdate(
 				queuedJob.job.id,
 				queuedJob.job.dispatchId,
 				queueName,
 				JobStatus.FAILED,
-				error instanceof Error ? error.message : String(error)
+				queuedJob.job.lastError?.message
 			);
 
-			// Pause queue if configured to do so
+			// Pause queue if configured
 			if (queue.options.pauseOnError) {
-				this.pause(queueName);
-				this.warning(`Queue '${queueName}' paused due to unexpected error`);
+				await this.pause(queueName);
 			}
-		} finally {
-			// Release lock if job has NO_OVERLAP behavior
-			if (metadata?.overlapBehavior === JobOverlapBehavior.NO_OVERLAP) {
-				// If there's an overlap delay, keep the lock for that duration
-				if (metadata.overlapDelay && metadata.overlapDelay > 0) {
-					setTimeout(() => {
-						this.transport.releaseJobLock(queuedJob.job.id, queueName);
-					}, metadata.overlapDelay);
-				} else {
-					// Release lock immediately
-					await this.transport.releaseJobLock(queuedJob.job.id, queueName);
-				}
-			}
-
-			// Remove job from active jobs
-			queue.activeJobs.delete(queuedJob.job.id);
-			queue.processing--;
-
-			// Process next job in queue
-			this.processQueueJobs(queueName);
 		}
 	}
 
 	/**
-	 * Create a new queue with the specified options
-	 * @param options Queue options
+	 * Add a job to the batch for processing
 	 */
-	public override async createQueue(options: WorkerQueueOptions): Promise<Worker> {
-		const result = await super.createQueue(options);
-
-		// Register the new queue with the transport if worker is running
-		if (this.isRunning && !this.registeredQueues.has(options.name)) {
-			this.registeredQueues.add(options.name);
-			await this.transport.registerWorker(this.id, Array.from(this.registeredQueues));
+	private addJobToBatch(queuedJob: QueuedJob, queueName: string): void {
+		if (!this.pendingBatches.has(queueName)) {
+			this.pendingBatches.set(queueName, {
+				queue: queueName,
+				jobs: [],
+				timestamp: Date.now()
+			});
 		}
 
-		return result;
+		const batch = this.pendingBatches.get(queueName)!;
+		batch.jobs.push(queuedJob);
+
+		// Process immediately if batch is full
+		if (batch.jobs.length >= this.maxBatchSize) {
+			this.pendingBatches.delete(queueName);
+			this.processBatch(batch);
+		}
 	}
 
 	/**
-	 * Handle a message from the transport
-	 * @param message The message to handle
+	 * Process the next job in a queue (overridden for batching)
+	 */
+	protected async processNextJob(queueName: string): Promise<void> {
+		const queue = this.queues.get(queueName);
+		if (!queue || queue.paused || queue.activeJobs.size >= queue.options.concurrency!) {
+			return;
+		}
+
+		// Find eligible jobs
+		const now = new Date();
+		const eligibleJobs: QueuedJob[] = [];
+
+		for (let i = 0; i < queue.jobs.length && eligibleJobs.length < this.maxBatchSize; i++) {
+			const job = queue.jobs[i];
+
+			// Skip scheduled jobs not ready yet
+			if (job.scheduledFor && job.scheduledFor > now) {
+				continue;
+			}
+
+			// Skip cancelled jobs
+			if (job.job.status === JobStatus.CANCELLED) {
+				queue.jobs.splice(i, 1);
+				i--;
+				continue;
+			}
+
+			eligibleJobs.push(job);
+		}
+
+		// Remove eligible jobs from queue
+		for (const job of eligibleJobs) {
+			const index = queue.jobs.indexOf(job);
+			if (index >= 0) {
+				queue.jobs.splice(index, 1);
+			}
+		}
+
+		// Add to batch for processing
+		if (eligibleJobs.length > 0) {
+			const batch: JobBatch = {
+				queue: queueName,
+				jobs: eligibleJobs,
+				timestamp: Date.now()
+			};
+
+			// Process small batches immediately, larger ones are batched
+			if (eligibleJobs.length === 1) {
+				await this.processBatch(batch);
+			} else {
+				this.pendingBatches.set(queueName, batch);
+			}
+		}
+	}
+
+	/**
+	 * Handle transport messages
 	 */
 	private async handleTransportMessage(message: TransportEvent): Promise<void> {
 		try {
 			switch (message.type) {
 				case 'job:process': {
-					// Add job to queue
 					const {
 						job: jobName,
 						args = [],
@@ -383,21 +600,27 @@ export class RedisWorker extends BaseWorker<RedisTransport> {
 				}
 
 				case 'job:cancel': {
-					// Cancel job
-					const { jobId, dispatchId, queue = 'default' } = message;
+					const { jobId, queue = 'default' } = message;
 					const cancelled = await this.cancelJob(jobId, queue);
-
-					// Send response
 					if (cancelled) {
-						await this.sendJobStatusUpdate(jobId, dispatchId, queue, JobStatus.CANCELLED);
+						await this.sendJobStatusUpdate(jobId, message.dispatchId, queue, JobStatus.CANCELLED);
 					}
 					break;
 				}
 
 				case 'job:cancelAll': {
-					// Cancel all jobs in queue
 					const { queue = 'default' } = message;
 					await this.cancelAllJobs(queue);
+					break;
+				}
+
+				case 'job:update': {
+					// Handle lock release notifications
+					if (message.status === 'lock_released') {
+						// Trigger processing for the queue
+						const queueName = message.queue;
+						await this.processQueueJobs(queueName);
+					}
 					break;
 				}
 			}
@@ -407,11 +630,7 @@ export class RedisWorker extends BaseWorker<RedisTransport> {
 	}
 
 	/**
-	 * Handle a job:process message
-	 * @param jobName Job class name
-	 * @param args Job constructor arguments
-	 * @param queueName Queue name
-	 * @param options Job options
+	 * Handle job process message
 	 */
 	private async handleProcessJob(
 		jobId: string,
@@ -455,30 +674,46 @@ export class RedisWorker extends BaseWorker<RedisTransport> {
 				jobOptions.retryDelay = Number(messageOptions.retryDelay);
 			}
 
-			// Check if we should schedule the job for later
-			if (jobOptions.scheduledFor && jobOptions.scheduledFor > new Date()) {
-				// For scheduled jobs, set status to SCHEDULED_FOR_RETRY
-				await this.sendJobStatusUpdate(
-					job.id,
-					job.dispatchId,
-					queueName,
-					JobStatus.SCHEDULED_FOR_RETRY
-				);
-				this.debug(
-					`Scheduled job ${job.id} for future execution at ${jobOptions.scheduledFor.toISOString()}`
-				);
-			} else {
-				// For immediate jobs, set status to PENDING
-				await this.sendJobStatusUpdate(job.id, job.dispatchId, queueName, JobStatus.PENDING);
-				this.debug(`Added job ${job.id} to queue ${queueName} with initial status: pending`);
-			}
+			// Send initial status
+			const initialStatus =
+				jobOptions.scheduledFor && jobOptions.scheduledFor > new Date()
+					? JobStatus.SCHEDULED_FOR_RETRY
+					: JobStatus.PENDING;
 
-			// Add job to queue for processing
+			await this.sendJobStatusUpdate(job.id, job.dispatchId, queueName, initialStatus);
+
+			// Add job to queue
 			await this.addJob(job, queueName, jobOptions);
 		} catch (error: any) {
 			this.error(`Error processing job ${jobName}: ${error.message}`);
-			this.sendJobStatusUpdate(jobId, dispatchId, queueName, JobStatus.FAILED, error.message);
-			throw error;
+			await this.sendJobStatusUpdate(jobId, dispatchId, queueName, JobStatus.FAILED, error.message);
 		}
+	}
+
+	/**
+	 * Update worker metrics
+	 */
+	private updateMetrics(jobCount: number, processingTime: number): void {
+		const currentAvg = this.metrics.averageProcessingTime;
+		const totalJobs = this.metrics.jobsProcessed + this.metrics.jobsFailed;
+
+		// Calculate new average
+		this.metrics.averageProcessingTime =
+			(currentAvg * totalJobs + processingTime) / (totalJobs + jobCount);
+	}
+
+	/**
+	 * Create a new queue with the specified options
+	 */
+	public override async createQueue(options: WorkerQueueOptions): Promise<Worker> {
+		const result = await super.createQueue(options);
+
+		// Register the new queue with the transport
+		if (this.isRunning && !this.registeredQueues.has(options.name)) {
+			this.registeredQueues.add(options.name);
+			await this.transport.registerWorker(this.id, Array.from(this.registeredQueues));
+		}
+
+		return result;
 	}
 }

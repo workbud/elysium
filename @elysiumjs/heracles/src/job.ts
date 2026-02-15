@@ -326,7 +326,7 @@ export abstract class Job extends InteractsWithConsole {
 			// Execute the job implementation
 			await this.execute();
 
-			if (this.#status !== JobStatus.CANCELLED) {
+			if (this.#status === JobStatus.RUNNING) {
 				this.#status = JobStatus.COMPLETED;
 				this.#completedAt = new Date();
 				this.debug(
@@ -334,16 +334,24 @@ export abstract class Job extends InteractsWithConsole {
 				);
 			}
 		} catch (err) {
-			this.#err = err instanceof Error ? err : new Error(String(err));
+			this.fail(err instanceof Error ? err : new Error(String(err)));
+		}
+	}
 
-			if (this.#status !== JobStatus.CANCELLED) {
-				this.#status = JobStatus.FAILED;
-				this.#completedAt = new Date();
-				this.error(
-					`Job ${this.id} failed at ${this.#completedAt.toISOString()} after ${this.retries} retries: ${this.#err.message}`
-				);
-				this.trace(this.#err);
-			}
+	/**
+	 * Marks the job as failed.
+	 * @param error The error that caused the job to fail.
+	 */
+	public fail(error: Error): void {
+		this.#err = error;
+
+		if (this.#status !== JobStatus.CANCELLED) {
+			this.#status = JobStatus.FAILED;
+			this.#completedAt = new Date();
+			this.error(
+				`Job ${this.id} failed at ${this.#completedAt.toISOString()} after ${this.retries} retries: ${this.#err.message}`
+			);
+			this.trace(this.#err);
 		}
 	}
 

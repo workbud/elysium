@@ -125,7 +125,7 @@ export abstract class BaseWorker<TTransport extends Transport>
 			},
 			jobs: [],
 			activeJobs: new Map(),
-			processing: 0,
+			retryingJobs: new Map(),
 			paused: false,
 			draining: false
 		};
@@ -198,7 +198,7 @@ export abstract class BaseWorker<TTransport extends Transport>
 		}
 
 		// Start processing if the queue is not paused and not already at max concurrency
-		if (!queue.paused && queue.processing < queue.options.concurrency!) {
+		if (!queue.paused && queue.activeJobs.size < queue.options.concurrency!) {
 			try {
 				this.processQueueJobs(queueName);
 			} catch (error) {
@@ -232,7 +232,7 @@ export abstract class BaseWorker<TTransport extends Transport>
 			// If all queues are paused and no jobs are processing, set worker status to PAUSED
 			if (
 				Array.from(this.queues.values()).every((q) => q.paused) &&
-				Array.from(this.queues.values()).every((q) => q.processing === 0)
+				Array.from(this.queues.values()).every((q) => q.activeJobs.size === 0)
 			) {
 				this.workerStatus = WorkerStatus.PAUSED;
 				this.info(`Worker ${this.id} is now paused`);
@@ -270,7 +270,9 @@ export abstract class BaseWorker<TTransport extends Transport>
 			}
 
 			// If any queue has jobs, worker should be ACTIVE
-			if (Array.from(this.queues.values()).some((q) => q.jobs.length > 0 || q.processing > 0)) {
+			if (
+				Array.from(this.queues.values()).some((q) => q.jobs.length > 0 || q.activeJobs.size > 0)
+			) {
 				this.workerStatus = WorkerStatus.ACTIVE;
 				this.info(`Worker ${this.id} is now active`);
 			}
@@ -343,7 +345,9 @@ export abstract class BaseWorker<TTransport extends Transport>
 
 			// If all queues are empty and no jobs are processing, worker is IDLE
 			if (
-				Array.from(this.queues.values()).every((q) => q.jobs.length === 0 && q.processing === 0)
+				Array.from(this.queues.values()).every(
+					(q) => q.jobs.length === 0 && q.activeJobs.size === 0
+				)
 			) {
 				this.workerStatus = WorkerStatus.IDLE;
 			}
@@ -363,7 +367,7 @@ export abstract class BaseWorker<TTransport extends Transport>
 		if (!queue) {
 			throw new Error(`Queue '${queueName}' does not exist`);
 		}
-		return queue.jobs.length + queue.processing;
+		return queue.jobs.length + queue.activeJobs.size;
 	}
 
 	/**
@@ -374,7 +378,7 @@ export abstract class BaseWorker<TTransport extends Transport>
 	public async totalSize(): Promise<number> {
 		let total = 0;
 		for (const queue of this.queues.values()) {
-			total += queue.jobs.length + queue.processing;
+			total += queue.jobs.length + queue.activeJobs.size;
 		}
 		return total;
 	}
@@ -385,17 +389,33 @@ export abstract class BaseWorker<TTransport extends Transport>
 	 * @returns An object containing statistics about each queue.
 	 */
 	public async getStats(): Promise<
-		Record<string, { waiting: number; processing: number; paused: boolean; draining: boolean }>
+		Record<
+			string,
+			{
+				waiting: number;
+				retrying: number;
+				processing: number;
+				paused: boolean;
+				draining: boolean;
+			}
+		>
 	> {
 		const stats: Record<
 			string,
-			{ waiting: number; processing: number; paused: boolean; draining: boolean }
+			{
+				waiting: number;
+				retrying: number;
+				processing: number;
+				paused: boolean;
+				draining: boolean;
+			}
 		> = {};
 
 		for (const [name, queue] of this.queues.entries()) {
 			stats[name] = {
 				waiting: queue.jobs.length,
-				processing: queue.processing,
+				retrying: queue.retryingJobs.size,
+				processing: queue.activeJobs.size,
 				paused: queue.paused,
 				draining: queue.draining
 			};
@@ -413,7 +433,7 @@ export abstract class BaseWorker<TTransport extends Transport>
 		// Calculate total active jobs
 		let activeJobs = 0;
 		for (const queue of this.queues.values()) {
-			activeJobs += queue.processing;
+			activeJobs += queue.activeJobs.size;
 		}
 
 		// Get queue names
@@ -614,12 +634,12 @@ export abstract class BaseWorker<TTransport extends Transport>
 
 			// Wait for all queues to finish processing
 			const allQueuesEmpty = (): boolean => {
-				return Array.from(this.queues.values()).every((q) => q.processing === 0);
+				return Array.from(this.queues.values()).every((q) => q.activeJobs.size === 0);
 			};
 
 			if (!allQueuesEmpty()) {
 				this.info(
-					`Worker ${this.id} waiting for ${Array.from(this.queues.values()).reduce((acc, q) => acc + q.processing, 0)} jobs to complete`
+					`Worker ${this.id} waiting for ${Array.from(this.queues.values()).reduce((acc, q) => acc + q.activeJobs.size, 0)} jobs to complete`
 				);
 
 				// Wait for queues to empty
@@ -707,7 +727,7 @@ export abstract class BaseWorker<TTransport extends Transport>
 			}
 
 			// Start processing if queue is not at capacity
-			if (readyJobs.length > 0 && queue.processing < queue.options.concurrency!) {
+			if (readyJobs.length > 0 && queue.activeJobs.size < queue.options.concurrency!) {
 				this.processQueueJobs(queueName);
 			}
 		}
@@ -745,9 +765,9 @@ export abstract class BaseWorker<TTransport extends Transport>
 		const states = Array.from(this.queues.values());
 
 		// Update worker status
-		if (states.some((q) => q.processing > 0)) {
+		if (states.some((q) => q.activeJobs.size > 0)) {
 			this.workerStatus = WorkerStatus.ACTIVE;
-		} else if (states.every((q) => q.jobs.length === 0 && q.processing === 0)) {
+		} else if (states.every((q) => q.jobs.length === 0 && q.activeJobs.size === 0)) {
 			this.workerStatus = WorkerStatus.IDLE;
 		}
 

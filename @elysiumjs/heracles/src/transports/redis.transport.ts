@@ -1,3 +1,12 @@
+import type { JobStatusInfo, Transport, TransportEvent } from '../transport';
+
+import { InteractsWithConsole, Redis } from '@elysiumjs/core';
+import { RedisClient } from 'bun';
+import { uid } from 'radash';
+
+import { JobStatus } from '../job';
+import { TransportMode } from '../transport';
+
 // Copyright (c) 2025-present Workbud Technologies Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,27 +21,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import type {
-	JobStatusInfo,
-	Transport,
-	TransportEvent,
-	TransportJobStatusMessage,
-	TransportMode
-} from '../transport';
-
-import { InteractsWithConsole, Redis } from '@elysiumjs/core';
-import { uid } from 'radash';
-
-import { JobStatus } from '../job';
-
 /**
  * Redis transport configuration options
  * @author Axel Nana <axel.nana@workbud.com>
  */
 export type RedisTransportOptions = {
 	/**
-	 * Redis connection name.
-	 * If not provided, uses the default connection.
+	 * Redis connection name from Elysium config.
 	 */
 	connection?: string;
 
@@ -53,12 +48,6 @@ export type RedisTransportOptions = {
 	 * If not provided, a random name will be generated.
 	 */
 	consumerName?: string;
-
-	/**
-	 * How often to poll Redis for new messages (in milliseconds).
-	 * @default 1000
-	 */
-	pollInterval?: number;
 
 	/**
 	 * Maximum number of messages to read in a single poll.
@@ -92,177 +81,177 @@ export type RedisTransportOptions = {
 };
 
 /**
- * Transport implementation using Redis streams for distributed job processing.
+ * Job index entry for efficient lookups
+ */
+interface JobIndexEntry {
+	jobId: string;
+	dispatchId: string;
+	queue: string;
+	status: string;
+	priority: number;
+	timestamp: number;
+}
+
+/**
+ * Transport implementation using Redis streams and pub/sub for distributed job processing.
  * @author Axel Nana <axel.nana@workbud.com>
  */
 export class RedisTransport extends InteractsWithConsole implements Transport {
 	/**
-	 * Redis client instance.
+	 * Main Redis client for commands
 	 */
-	private client: Bun.RedisClient;
+	private commandClient: RedisClient = null!;
 
 	/**
-	 * Options for this transport.
+	 * Dedicated client for pub/sub subscriptions
+	 */
+	private subscriberClient: RedisClient = null!;
+
+	/**
+	 * Dedicated client for publishing messages
+	 */
+	private publisherClient: RedisClient = null!;
+
+	/**
+	 * Options for this transport
 	 */
 	private options: Required<RedisTransportOptions>;
 
 	/**
-	 * Mode this transport is operating in.
+	 * Mode this transport is operating in
 	 */
 	private mode: TransportMode;
 
 	/**
-	 * Registered message handlers.
+	 * Registered message handlers
 	 */
 	private messageHandlers: Array<(message: TransportEvent) => void | Promise<void>> = [];
 
 	/**
-	 * Timer for polling Redis in consumer mode.
-	 */
-	private pollTimer?: NodeJS.Timeout;
-
-	/**
-	 * Timer for stream cleanup.
-	 */
-	private cleanupTimer?: NodeJS.Timeout;
-
-	/**
-	 * Last processed message IDs by stream.
-	 */
-	private lastIds: Map<string, string> = new Map();
-
-	/**
-	 * Whether to check the logs instead of new messages.
-	 */
-	private checkLogs: Map<string, boolean> = new Map();
-
-	/**
-	 * Consumer ID for this instance.
+	 * Consumer ID for this instance
 	 */
 	private consumerId: string;
 
 	/**
-	 * Whether the consumer group has been created for each stream.
+	 * Whether the transport is currently running
 	 */
-	private consumerGroupCreated: Set<string> = new Set();
+	private isRunning: boolean = false;
 
 	/**
-	 * Map of message IDs to completed status for tracking completed jobs.
+	 * Timer for cleanup operations
 	 */
-	private completedMessageIds: Map<string, { streamKey: string; timestamp: number }> = new Map();
+	private cleanupTimer?: ReturnType<typeof setInterval>;
 
 	/**
-	 * Map to track locks on job IDs for NO_OVERLAP jobs.
+	 * Map to track job locks for NO_OVERLAP jobs
 	 */
 	private jobLocks: Map<string, { lockedUntil: number; queue: string }> = new Map();
 
 	/**
-	 * Create a new Redis transport.
+	 * Create a new Redis transport
 	 */
 	constructor(mode: TransportMode, options: RedisTransportOptions = {}) {
 		super();
 
 		this.mode = mode;
 		this.options = {
-			connection: options.connection ?? 'default',
-			keyPrefix: options.keyPrefix ?? 'elysium:heracles',
-			consumerGroup: options.consumerGroup ?? 'workers',
-			consumerName: options.consumerName ?? `worker-${uid(8)}`,
-			pollInterval: options.pollInterval ?? 1000,
-			batchSize: options.batchSize ?? 10,
-			statusTTL: options.statusTTL ?? 86400,
-			cleanupCompletedJobs: options.cleanupCompletedJobs !== false, // Default to true
-			completedJobRetention: options.completedJobRetention ?? 3600, // Default to 1 hour
-			maxStreamSize: options.maxStreamSize ?? 1000
+			connection: options.connection || 'default',
+			keyPrefix: options.keyPrefix || 'elysium:heracles',
+			consumerGroup: options.consumerGroup || 'workers',
+			consumerName: options.consumerName || `worker-${uid(8)}`,
+			batchSize: options.batchSize || 10,
+			statusTTL: options.statusTTL || 86400,
+			cleanupCompletedJobs: options.cleanupCompletedJobs !== false,
+			completedJobRetention: options.completedJobRetention || 3600,
+			maxStreamSize: options.maxStreamSize || 1000
 		};
 
-		// Get Redis client from Redis service
-		this.client = Redis.getConnection(this.options.connection);
-		this.consumerId = this.mode === 'consumer' ? this.options.consumerName : `producer-${uid(8)}`;
+		this.consumerId =
+			this.mode === TransportMode.CONSUMER ? this.options.consumerName : `producer-${uid(8)}`;
 	}
 
 	/**
-	 * Helper method to execute Redis commands with proper type conversion
-	 * @param command Redis command
-	 * @param args Command arguments
-	 * @returns Redis response
+	 * Initialize Redis clients with proper configuration
 	 */
-	private redisCommand(command: string, args: any[]): Promise<any> {
-		// Convert any non-string arguments to strings
-		const stringArgs = args.map((arg) => {
-			if (typeof arg === 'number') {
-				return arg.toString();
-			} else if (arg === null || arg === undefined) {
-				return '';
-			} else if (Array.isArray(arg)) {
-				return JSON.stringify(arg);
-			} else if (typeof arg === 'object') {
-				return JSON.stringify(arg);
-			}
-			return arg;
-		});
+	private async initializeClients(): Promise<void> {
+		// Main command client with auto-pipelining
+		this.commandClient = await Redis.getConnection(this.options.connection).duplicate();
 
-		try {
-			return this.client.send(command, stringArgs);
-		} catch (error) {
-			throw new Error(`Redis command failed: ${command} - ${error}`);
-		}
+		// Subscriber client (pub/sub takes over connection)
+		this.subscriberClient = await Redis.getConnection(this.options.connection).duplicate();
+
+		// Publisher client for sending notifications
+		this.publisherClient = await Redis.getConnection(this.options.connection).duplicate();
+
+		// Set up connection event handlers
+		this.setupConnectionHandlers();
 	}
 
 	/**
-	 * Finds job message ID in the stream by job ID
-	 * @param jobId The job ID to find
-	 * @param queueName The queue to search in
-	 * @returns The message ID if found, null otherwise
+	 * Setup connection event handlers for all clients
 	 */
-	private async findJobMessageId(
-		jobId: string,
-		dispatchId: string,
-		queueName: string
-	): Promise<string | null> {
-		const streamKey = this.getStreamKey(queueName);
+	private setupConnectionHandlers(): void {
+		this.commandClient.onconnect = () => {
+			this.debug('Command client connected');
+		};
 
-		try {
-			// Use XRANGE to find messages for this job
-			// First try with the job's exact ID included in message ID (producer pattern)
-			const messages = await this.redisCommand('XRANGE', [streamKey, '-', '+', 'COUNT', '1000']);
+		this.commandClient.onclose = (error) => {
+			this.error(`Command client disconnected: ${error}`);
+		};
 
-			for (const [messageId, fields] of messages) {
-				// Convert fields to object and check jobId field
-				const messageObj: Record<string, string> = {};
-				for (let i = 0; i < fields.length; i += 2) {
-					messageObj[fields[i]] = fields[i + 1];
-				}
+		this.subscriberClient.onconnect = () => {
+			this.debug('Subscriber client connected');
+		};
 
-				if (messageObj.jobId === jobId && messageObj.dispatchId === dispatchId) {
-					return messageId;
-				}
-			}
-		} catch (error) {
-			this.error(`Error finding job message: ${error}`);
-		}
+		this.subscriberClient.onclose = (error) => {
+			this.error(`Subscriber client disconnected: ${error}`);
+		};
 
-		return null;
+		this.publisherClient.onconnect = () => {
+			this.debug('Publisher client connected');
+		};
+
+		this.publisherClient.onclose = (error) => {
+			this.error(`Publisher client disconnected: ${error}`);
+		};
 	}
 
 	/**
 	 * Start the transport
 	 */
 	async start(): Promise<void> {
+		if (this.isRunning) {
+			return;
+		}
+
 		try {
-			// Test connection using raw command
-			await this.redisCommand('PING', []);
+			// Initialize Redis clients
+			await this.initializeClients();
+
+			// Connect all clients
+			await Promise.all([
+				this.commandClient.connect(),
+				this.subscriberClient.connect(),
+				this.publisherClient.connect()
+			]);
+
+			// Verify connections
+			await this.commandClient.ping();
+			await this.publisherClient.ping();
+
 			this.info(`RedisTransport started in ${this.mode} mode with ID: ${this.consumerId}`);
 
-			if (this.mode === 'consumer') {
-				// Start polling for messages
-				this.startPolling();
+			if (this.mode === TransportMode.CONSUMER) {
+				// Subscribe to job channels
+				await this.subscribeToChannels();
 
-				// Schedule periodic cleanup of completed jobs if enabled
+				// Schedule periodic cleanup if enabled
 				if (this.options.cleanupCompletedJobs) {
-					this.scheduleStreamCleanup();
+					this.scheduleCleanup();
 				}
 			}
+
+			this.isRunning = true;
 		} catch (error) {
 			this.error(`Failed to start RedisTransport: ${error}`);
 			throw new Error(`Redis connection failed: ${error}`);
@@ -273,11 +262,7 @@ export class RedisTransport extends InteractsWithConsole implements Transport {
 	 * Stop the transport
 	 */
 	async stop(): Promise<void> {
-		// Stop polling
-		if (this.pollTimer) {
-			clearInterval(this.pollTimer);
-			this.pollTimer = undefined;
-		}
+		this.isRunning = false;
 
 		// Stop cleanup timer
 		if (this.cleanupTimer) {
@@ -285,7 +270,142 @@ export class RedisTransport extends InteractsWithConsole implements Transport {
 			this.cleanupTimer = undefined;
 		}
 
+		// Unsubscribe from all channels
+		if (this.mode === TransportMode.CONSUMER) {
+			await this.subscriberClient.unsubscribe();
+		}
+
+		// Close all connections
+		this.commandClient.close();
+		this.subscriberClient.close();
+		this.publisherClient.close();
+
 		this.info('RedisTransport stopped');
+	}
+
+	/**
+	 * Subscribe to relevant pub/sub channels
+	 */
+	private async subscribeToChannels(): Promise<void> {
+		const queues = await this.getRegisteredQueues();
+
+		for (const queue of queues) {
+			// Subscribe to new job notifications
+			await this.subscriberClient.subscribe(
+				`${this.options.keyPrefix}:queue:${queue}:new`,
+				async (messageId, _) => {
+					this.debug(`New job notification for queue ${queue}: ${messageId}`);
+					await this.processJobFromStream(queue, messageId);
+				}
+			);
+
+			// Subscribe to job control messages
+			await this.subscriberClient.subscribe(
+				`${this.options.keyPrefix}:queue:${queue}:control`,
+				async (message, _) => {
+					try {
+						const control = JSON.parse(message);
+						await this.handleControlMessage(control);
+					} catch (error) {
+						this.error(`Error parsing control message: ${error}`);
+					}
+				}
+			);
+
+			// Subscribe to lock release notifications for NO_OVERLAP jobs
+			await this.subscriberClient.subscribe(
+				`${this.options.keyPrefix}:lock:${queue}:released`,
+				(jobId, _) => {
+					this.debug(`Lock released for job ${jobId} in queue ${queue}`);
+					// Notify handlers that a lock was released
+					this.notifyLockRelease(jobId, queue);
+				}
+			);
+		}
+
+		// Subscribe to worker coordination channel
+		await this.subscriberClient.subscribe(
+			`${this.options.keyPrefix}:worker:coordination`,
+			async (message, _) => {
+				try {
+					const event = JSON.parse(message);
+					await this.handleWorkerCoordination(event);
+				} catch (error) {
+					this.error(`Error handling worker coordination: ${error}`);
+				}
+			}
+		);
+	}
+
+	/**
+	 * Process a job from the stream when notified via pub/sub
+	 */
+	private async processJobFromStream(queue: string, messageId: string): Promise<void> {
+		const streamKey = this.getStreamKey(queue);
+
+		try {
+			// Read the specific message from the stream
+			const messages = (await this.commandClient.send('XRANGE', [
+				streamKey,
+				messageId,
+				messageId
+			])) as Array<[string, string[]]>;
+
+			if (messages && messages.length > 0) {
+				const [_id, fields] = messages[0];
+				const message = this.deserializeMessage(fields, queue);
+
+				// Process the message through handlers
+				for (const handler of this.messageHandlers) {
+					try {
+						await handler(message);
+					} catch (error) {
+						this.error(`Error in message handler: ${error}`);
+					}
+				}
+
+				// Acknowledge the message in the consumer group
+				await this.commandClient.send('XACK', [streamKey, this.options.consumerGroup, messageId]);
+			}
+		} catch (error) {
+			this.error(`Error processing job from stream: ${error}`);
+		}
+	}
+
+	/**
+	 * Handle control messages
+	 */
+	private async handleControlMessage(control: any): Promise<void> {
+		switch (control.type) {
+			case 'pause':
+				this.info(`Queue ${control.queue} paused`);
+				break;
+			case 'resume':
+				this.info(`Queue ${control.queue} resumed`);
+				break;
+			case 'drain':
+				this.info(`Queue ${control.queue} draining`);
+				break;
+			default:
+				this.debug(`Unknown control message type: ${control.type}`);
+		}
+	}
+
+	/**
+	 * Handle worker coordination events
+	 */
+	private async handleWorkerCoordination(event: any): Promise<void> {
+		switch (event.type) {
+			case 'worker:joined':
+				this.debug(`Worker ${event.workerId} joined`);
+				break;
+			case 'worker:left':
+				this.debug(`Worker ${event.workerId} left`);
+				break;
+			case 'rebalance':
+				this.debug('Rebalancing work across workers');
+				break;
+		}
 	}
 
 	/**
@@ -293,142 +413,79 @@ export class RedisTransport extends InteractsWithConsole implements Transport {
 	 */
 	async send(message: TransportEvent): Promise<void> {
 		try {
-			let queueNames: string[] = ['default'];
+			const queueName = this.extractQueueName(message);
+			const streamKey = this.getStreamKey(queueName);
 
-			// Extract queue name if the message type has it
-			if ('queue' in message && typeof message.queue === 'string') {
-				queueNames = [message.queue];
-			} else if ('queues' in message && Array.isArray(message.queues)) {
-				queueNames = message.queues;
-			}
-
-			for (const queueName of queueNames) {
-				// Determine the appropriate stream based on message type
-				const streamName: string = this.getStreamKey(queueName);
-
-				// Convert message to Redis hash format
+			if (message.type === 'job:process') {
+				// Add job to stream
 				const messageData = this.serializeMessage(message);
+				const messageId = await this.commandClient.send('XADD', [streamKey, '*', ...messageData]);
 
-				// ID of the created message in the stream
-				let messageId: string = '0';
+				// Create job index entry
+				await this.indexJob({
+					jobId: message.jobId,
+					dispatchId: message.dispatchId,
+					queue: queueName,
+					status: JobStatus.PENDING,
+					priority: message.options?.priority || 10,
+					timestamp: Date.now()
+				});
 
-				// Handle job status updates differently
-				if (message.type === 'job:status' || message.type === 'job:result') {
-					// Find existing message for this job
-					const existingMessageId = await this.findJobMessageId(
-						message.jobId,
-						message.dispatchId,
-						queueName
-					);
+				// Store initial job status
+				await this.storeJobStatus({
+					jobId: message.jobId,
+					dispatchId: message.dispatchId,
+					queue: queueName,
+					status: JobStatus.PENDING,
+					retries: 0,
+					createdAt: new Date().toISOString(),
+					updatedAt: new Date().toISOString(),
+					messageId
+				});
 
-					if (existingMessageId) {
-						// Update existing job entry with new status
-						const statusInfo: Partial<Record<keyof JobStatusInfo, string>> = {
-							status: message.status,
-							updatedAt: Date.now().toString()
-						};
+				// Notify subscribers about new job via pub/sub
+				await this.publisherClient.publish(
+					`${this.options.keyPrefix}:queue:${queueName}:new`,
+					messageId
+				);
 
-						// Add additional fields if present
-						if (message.error) statusInfo['error'] = message.error;
-						if (message.retries !== undefined) statusInfo['retries'] = message.retries.toString();
-						if ((message as any).startedAt) statusInfo['startedAt'] = (message as any).startedAt;
-						if (message.completedAt) statusInfo['completedAt'] = message.completedAt;
+				this.debug(`Job ${message.jobId} dispatched to queue ${queueName} with ID ${messageId}`);
+			} else if (message.type === 'job:status' || message.type === 'job:result') {
+				// Update job status
+				await this.updateJobStatus(message.jobId, message.dispatchId, queueName, {
+					status: message.status,
+					error: message.error,
+					retries: message.retries,
+					completedAt: message.completedAt,
+					updatedAt: new Date().toISOString()
+				});
 
-						// Update the job entry
-						await this.redisCommand('HSET', [
-							this.getJobStatusKey(message.jobId, message.dispatchId, queueName),
-							...Object.entries(statusInfo).flat()
-						]);
+				// Update job index
+				await this.updateJobIndex(message.jobId, message.dispatchId, queueName, message.status);
 
-						this.debug(`Updated status for job ${message.jobId} to ${message.status}`);
-
-						// Store in-memory for quick lookup
-						await this.storeJobStatus({
-							jobId: message.jobId,
-							dispatchId: message.dispatchId,
-							queue: queueName,
-							status: message.status,
-							error: message.error,
-							retries: message.retries ?? 0,
-							createdAt: (message as any).createdAt ?? new Date().toISOString(),
-							startedAt: (message as any).startedAt,
-							completedAt: message.completedAt
-						});
-
-						return;
-					} else {
-						// First check if we should update an existing job status instead
-						const jobId = message.jobId;
-						const dispatchId = message.dispatchId;
-						const statusKey = this.getJobStatusKey(jobId, dispatchId, queueName);
-						const exists = await this.redisCommand('EXISTS', [statusKey]);
-
-						// Add to Redis stream using raw command
-						messageId = await this.redisCommand('XADD', [
-							streamName,
-							'*', // Auto-generate ID
-							...messageData
-						]);
-
-						if (exists) {
-							// Update existing job status
-							await this.updateJobStatus(message.jobId, message.dispatchId, queueName, {
-								status: message.status,
-								error: message.error,
-								retries: message.retries ?? 0,
-								startedAt: (message as any).startedAt,
-								completedAt: message.completedAt,
-								updatedAt: Date.now().toString()
-							});
-						} else {
-							// Create new job status
-							await this.storeJobStatus({
-								jobId: message.jobId,
-								dispatchId: message.dispatchId,
-								queue: queueName,
-								status: message.status,
-								error: message.error,
-								retries: message.retries ?? 0,
-								createdAt: (message as any).createdAt ?? new Date().toISOString(),
-								startedAt: (message as any).startedAt,
-								completedAt: message.completedAt,
-								messageId: messageId,
-								updatedAt: Date.now().toString()
-							});
-						}
-					}
-				} else if (message.type === 'job:process') {
-					// Add to Redis stream using raw command
-					messageId = await this.redisCommand('XADD', [
-						streamName,
-						'*', // Auto-generate ID
-						...messageData
-					]);
-
-					// Store job information in separate hash for easy access and updates
-					await this.storeJobStatus({
+				// Broadcast status update via pub/sub
+				await this.publisherClient.publish(
+					`${this.options.keyPrefix}:job:${message.jobId}:status`,
+					JSON.stringify({
+						status: message.status,
+						error: message.error,
+						timestamp: Date.now()
+					})
+				);
+			} else if (message.type === 'job:cancel') {
+				// Send cancel command via pub/sub
+				await this.publisherClient.publish(
+					`${this.options.keyPrefix}:queue:${queueName}:control`,
+					JSON.stringify({
+						type: 'cancel',
 						jobId: message.jobId,
-						dispatchId: message.dispatchId,
-						queue: queueName,
-						status: JobStatus.PENDING,
-						retries: 0,
-						createdAt: new Date().toISOString(),
-						messageId: messageId,
-						updatedAt: Date.now().toString()
-					});
-				} else if (message.type === 'job:update') {
-					// Direct update of job status without creating a new message
-					await this.updateJobStatus(message.jobId, message.dispatchId, queueName, message.updates);
-				} else {
-					// Add to Redis stream using raw command
-					messageId = await this.redisCommand('XADD', [
-						streamName,
-						'*', // Auto-generate ID
-						...messageData
-					]);
-				}
-
-				this.debug(`Sent ${message.type} message to stream ${streamName} with ID ${messageId}`);
+						dispatchId: message.dispatchId
+					})
+				);
+			} else {
+				// Handle other message types
+				const messageData = this.serializeMessage(message);
+				await this.commandClient.send('XADD', [streamKey, '*', ...messageData]);
 			}
 		} catch (error) {
 			this.error(`Failed to send message: ${error}`);
@@ -444,78 +501,77 @@ export class RedisTransport extends InteractsWithConsole implements Transport {
 	}
 
 	/**
-	 * Gets the current status of a job.
+	 * Gets the current status of a job
 	 */
 	async getJobStatus(jobId: string, dispatchId: string, queueName: string): Promise<JobStatusInfo> {
-		// Try to get from Redis
 		try {
 			const statusKey = this.getJobStatusKey(jobId, dispatchId, queueName);
-			const jobData = await this.redisCommand('HGETALL', [statusKey]);
+			const jobData = await this.commandClient.hmget(statusKey, [
+				'jobId',
+				'dispatchId',
+				'queue',
+				'status',
+				'error',
+				'retries',
+				'createdAt',
+				'startedAt',
+				'completedAt',
+				'updatedAt',
+				'messageId'
+			]);
 
-			if (jobData) {
-				const status: JobStatusInfo = {
-					jobId,
-					dispatchId: jobData.dispatchId,
-					queue: queueName,
-					status: jobData.status || 'unknown',
-					error: jobData.error,
-					retries: parseInt(jobData.retries || '0', 10),
-					createdAt: jobData.createdAt || new Date().toISOString(),
-					startedAt: jobData.startedAt,
-					completedAt: jobData.completedAt,
-					updatedAt: jobData.updatedAt,
-					messageId: jobData.messageId
+			if (jobData && jobData[0]) {
+				return {
+					jobId: jobData[0] as string,
+					dispatchId: jobData[1] as string,
+					queue: (jobData[2] as string) || queueName,
+					status: (jobData[3] as string) || 'unknown',
+					error: jobData[4] as string | undefined,
+					retries: parseInt((jobData[5] as string) || '0', 10),
+					createdAt: (jobData[6] as string) || new Date().toISOString(),
+					startedAt: jobData[7] as string | undefined,
+					completedAt: jobData[8] as string | undefined,
+					updatedAt: jobData[9] as string | undefined,
+					messageId: jobData[10] as string | undefined
 				};
-
-				this.debug(`Retrieved job status for ${jobId} from Redis: ${status.status}`);
-				return status;
 			}
-		} catch (error) {
-			this.warning(`Failed to get job status from Redis: ${error}`);
-		}
 
-		// If we couldn't find the status, check if the job exists in the queue
-		try {
-			const messageId = await this.findJobMessageId(jobId, dispatchId, queueName);
-
-			if (messageId) {
-				// Job exists in the stream but doesn't have a status entry yet
-				const status: JobStatusInfo = {
+			// Try to get from index if not found
+			const indexData = await this.getJobFromIndex(jobId, dispatchId, queueName);
+			if (indexData) {
+				return {
 					jobId,
 					dispatchId,
 					queue: queueName,
-					status: JobStatus.PENDING,
+					status: indexData.status,
 					retries: 0,
-					createdAt: new Date().toISOString(),
-					messageId,
-					updatedAt: Date.now().toString()
+					createdAt: new Date(indexData.timestamp).toISOString()
 				};
-
-				// Store this status for future reference
-				await this.storeJobStatus(status);
-				return status;
 			}
-		} catch (error) {
-			this.debug(`Error checking job existence in stream: ${error}`);
-		}
 
-		// Return default status if not found
-		return {
-			jobId,
-			dispatchId,
-			queue: queueName,
-			status: 'unknown',
-			retries: 0,
-			createdAt: new Date().toISOString()
-		};
+			return {
+				jobId,
+				dispatchId,
+				queue: queueName,
+				status: 'unknown',
+				retries: 0,
+				createdAt: new Date().toISOString()
+			};
+		} catch (error) {
+			this.warning(`Failed to get job status: ${error}`);
+			return {
+				jobId,
+				dispatchId,
+				queue: queueName,
+				status: 'unknown',
+				retries: 0,
+				createdAt: new Date().toISOString()
+			};
+		}
 	}
 
 	/**
-	 * Updates a job's status directly in Redis without creating a new message.
-	 *
-	 * @param jobId The ID of the job to update
-	 * @param queueName The queue the job belongs to
-	 * @param updates The status updates to apply
+	 * Updates a job's status
 	 */
 	async updateJobStatus(
 		jobId: string,
@@ -525,165 +581,40 @@ export class RedisTransport extends InteractsWithConsole implements Transport {
 	): Promise<void> {
 		try {
 			const statusKey = this.getJobStatusKey(jobId, dispatchId, queueName);
-			const timestamp = Date.now().toString();
+			const fields: string[] = [];
 
-			// Check if job status exists
-			const exists = await this.redisCommand('EXISTS', [statusKey]);
+			// Build update fields
+			if (updates.status) fields.push('status', updates.status);
+			if (updates.error !== undefined) fields.push('error', updates.error || '');
+			if (updates.retries !== undefined) fields.push('retries', updates.retries.toString());
+			if (updates.startedAt) fields.push('startedAt', updates.startedAt);
+			if (updates.completedAt) fields.push('completedAt', updates.completedAt);
+			if (updates.updatedAt) fields.push('updatedAt', updates.updatedAt);
 
-			if (!exists) {
-				// Job status doesn't exist in Redis yet
+			if (fields.length > 0) {
+				// Update status in Redis (auto-pipelined)
+				await this.commandClient.hmset(statusKey, fields);
+				await this.commandClient.expire(statusKey, this.options.statusTTL);
+
+				// Update index if status changed
 				if (updates.status) {
-					// Create new status entry
-					const newStatus: JobStatusInfo = {
-						jobId,
-						dispatchId,
-						queue: queueName,
-						status: updates.status,
-						error: updates.error,
-						retries: updates.retries || 0,
-						createdAt: updates.createdAt || new Date().toISOString(),
-						startedAt: updates.startedAt,
-						completedAt: updates.completedAt,
-						updatedAt: timestamp,
-						messageId: updates.messageId
-					};
-					await this.storeJobStatus(newStatus);
-
-					// Also send notifications if this is a final status
-					if (
-						updates.status === JobStatus.COMPLETED ||
-						updates.status === JobStatus.FAILED ||
-						updates.status === JobStatus.CANCELLED
-					) {
-						// Forward the status update to any message handlers as a job:result event
-						for (const handler of this.messageHandlers) {
-							try {
-								handler({
-									type: 'job:result',
-									jobId,
-									dispatchId,
-									queue: queueName,
-									status: updates.status,
-									error: updates.error,
-									completedAt: updates.completedAt ?? new Date().toISOString()
-								});
-							} catch (handlerError) {
-								this.error(`Error in message handler: ${handlerError}`);
-							}
-						}
-					} else {
-						// For non-terminal statuses, just send a regular status update
-						for (const handler of this.messageHandlers) {
-							try {
-								handler({
-									type: 'job:status',
-									jobId,
-									dispatchId,
-									queue: queueName,
-									status: updates.status,
-									error: updates.error,
-									updatedAt: updates.updatedAt ?? new Date().toISOString()
-								});
-							} catch (handlerError) {
-								this.error(`Error in message handler: ${handlerError}`);
-							}
-						}
-					}
+					await this.updateJobIndex(jobId, dispatchId, queueName, updates.status);
 				}
-				return;
-			}
 
-			// Build update fields for existing entry
-			const updateFields: string[] = [];
-			const notifyFields: TransportJobStatusMessage = {} as TransportJobStatusMessage;
+				// Notify about status change via pub/sub
+				await this.publisherClient.publish(
+					`${this.options.keyPrefix}:job:${jobId}:status`,
+					JSON.stringify({
+						...updates,
+						timestamp: Date.now()
+					})
+				);
 
-			// Add all update fields
-			if (updates.status) {
-				updateFields.push('status', updates.status);
-				notifyFields.status = updates.status;
-			}
-
-			if (updates.error !== undefined) {
-				updateFields.push('error', updates.error || '');
-				notifyFields.error = updates.error || '';
-			}
-
-			if (updates.retries !== undefined) {
-				updateFields.push('retries', updates.retries.toString());
-				notifyFields.retries = updates.retries;
-			}
-
-			if (updates.startedAt) {
-				updateFields.push('startedAt', updates.startedAt);
-				notifyFields.startedAt = updates.startedAt;
-			}
-
-			if (updates.completedAt) {
-				updateFields.push('completedAt', updates.completedAt);
-				notifyFields.completedAt = updates.completedAt;
-			}
-
-			// Always include updatedAt timestamp
-			updateFields.push('updatedAt', timestamp);
-			notifyFields.updatedAt = timestamp;
-
-			// Update Redis hash
-			if (updateFields.length > 0) {
-				await this.redisCommand('HSET', [statusKey, ...updateFields]);
-
-				// Reset expiration time
-				await this.redisCommand('EXPIRE', [statusKey, this.options.statusTTL]);
-
-				this.debug(`Updated job ${jobId} status: ${updates.status ?? 'fields updated'}`);
-
-				// If this is a terminal status, track it for cleanup
-				if (
-					updates.status === JobStatus.COMPLETED ||
-					updates.status === JobStatus.FAILED ||
-					updates.status === JobStatus.CANCELLED
-				) {
-					// Get the message ID associated with this job
-					const currentStatus = await this.getJobStatus(jobId, dispatchId, queueName);
-					if (currentStatus.messageId) {
-						this.trackCompletedMessage(currentStatus.messageId, this.getStreamKey(queueName));
-
-						// Also notify handlers of job completion
-						for (const handler of this.messageHandlers) {
-							try {
-								handler({
-									type: 'job:result',
-									jobId,
-									dispatchId,
-									queue: queueName,
-									status: updates.status,
-									error: updates.error,
-									completedAt: updates.completedAt || timestamp,
-									retries: parseInt(currentStatus.retries.toString(), 10)
-								});
-							} catch (handlerError) {
-								this.error(`Error in message handler: ${handlerError}`);
-							}
-						}
-					}
-				} else {
-					// For non-terminal statuses, just send a regular status update
-					for (const handler of this.messageHandlers) {
-						try {
-							handler({
-								...notifyFields,
-								type: 'job:status',
-								jobId,
-								queue: queueName
-							});
-						} catch (handlerError) {
-							this.error(`Error in message handler: ${handlerError}`);
-						}
-					}
-				}
+				this.debug(`Updated job ${jobId} status: ${updates.status || 'fields updated'}`);
 			}
 		} catch (error) {
 			this.error(`Failed to update job status: ${error}`);
-			throw new Error(`Failed to update job status: ${error}`);
+			throw error;
 		}
 	}
 
@@ -692,44 +623,43 @@ export class RedisTransport extends InteractsWithConsole implements Transport {
 	 */
 	async registerWorker(workerId: string, queues: string[]): Promise<void> {
 		try {
+			// Ensure consumer groups exist for all queues
 			for (const queue of queues) {
-				const streamName = this.getStreamKey(queue);
-
-				// Ensure stream exists
-				await this.ensureStreamExists(streamName);
-
-				// Ensure consumer group exists
-				await this.ensureConsumerGroupExists(streamName);
-
-				// Register worker in Redis using raw command
-				const workerKey = this.getWorkerKey(workerId);
-				await this.redisCommand('HSET', [
-					workerKey,
-					'id',
-					workerId,
-					'status',
-					'active',
-					'lastSeen',
-					new Date().toISOString(),
-					'queues',
-					JSON.stringify(queues)
-				]);
-
-				// Set TTL to auto-expire if heartbeat stops
-				await this.redisCommand('EXPIRE', [workerKey, '60']);
-
-				this.debug(`Registered worker ${workerId} for queue ${queue}`);
+				const streamKey = this.getStreamKey(queue);
+				await this.ensureConsumerGroupExists(streamKey);
 			}
 
-			// Send worker registration message
-			await this.send({
-				type: 'worker:register',
+			// Register worker in Redis
+			const workerKey = this.getWorkerKey(workerId);
+			await this.commandClient.hmset(workerKey, [
+				'id',
 				workerId,
-				queues
-			});
+				'status',
+				'active',
+				'lastSeen',
+				new Date().toISOString(),
+				'queues',
+				JSON.stringify(queues)
+			]);
+
+			// Set TTL for auto-cleanup
+			await this.commandClient.expire(workerKey, 60);
+
+			// Notify about worker registration via pub/sub
+			await this.publisherClient.publish(
+				`${this.options.keyPrefix}:worker:coordination`,
+				JSON.stringify({
+					type: 'worker:joined',
+					workerId,
+					queues,
+					timestamp: Date.now()
+				})
+			);
+
+			this.debug(`Registered worker ${workerId} for queues: ${queues.join(', ')}`);
 		} catch (error) {
 			this.error(`Failed to register worker: ${error}`);
-			throw new Error(`Failed to register worker: ${error}`);
+			throw error;
 		}
 	}
 
@@ -738,151 +668,195 @@ export class RedisTransport extends InteractsWithConsole implements Transport {
 	 */
 	async unregisterWorker(workerId: string): Promise<void> {
 		try {
-			// Remove worker from Redis using raw command
 			const workerKey = this.getWorkerKey(workerId);
-			await this.redisCommand('DEL', [workerKey]);
+			await this.commandClient.del(workerKey);
 
-			// Send worker unregistration message
-			await this.send({
-				type: 'worker:unregister',
-				workerId
-			});
+			// Notify about worker leaving
+			await this.publisherClient.publish(
+				`${this.options.keyPrefix}:worker:coordination`,
+				JSON.stringify({
+					type: 'worker:left',
+					workerId,
+					timestamp: Date.now()
+				})
+			);
 
 			this.debug(`Unregistered worker ${workerId}`);
 		} catch (error) {
 			this.error(`Failed to unregister worker: ${error}`);
-			throw new Error(`Failed to unregister worker: ${error}`);
+			throw error;
 		}
 	}
 
 	/**
-	 * Start polling Redis for messages
+	 * Index a job for efficient lookups
 	 */
-	private startPolling(): void {
-		this.pollTimer = setInterval(() => {
-			this.pollMessages().catch((error) => {
-				this.error(`Error polling messages: ${error}`);
-			});
-		}, this.options.pollInterval);
+	private async indexJob(entry: JobIndexEntry): Promise<void> {
+		const score = entry.timestamp;
+		const member = `${entry.jobId}:${entry.dispatchId}`;
+
+		// Use Promise.all for auto-pipelined operations
+		await Promise.all([
+			// Index by queue
+			this.commandClient.send('ZADD', [
+				`${this.options.keyPrefix}:idx:queue:${entry.queue}`,
+				score.toString(),
+				member
+			]),
+			// Index by status
+			this.commandClient.send('ZADD', [
+				`${this.options.keyPrefix}:idx:status:${entry.status}`,
+				score.toString(),
+				member
+			]),
+			// Index by priority
+			this.commandClient.send('ZADD', [
+				`${this.options.keyPrefix}:idx:priority`,
+				entry.priority.toString(),
+				member
+			])
+		]);
 	}
 
 	/**
-	 * Poll for new messages
+	 * Update job index when status changes
 	 */
-	private async pollMessages(): Promise<void> {
-		if (this.mode !== 'consumer') {
-			return;
-		}
+	private async updateJobIndex(
+		jobId: string,
+		dispatchId: string,
+		_queue: string,
+		newStatus: string
+	): Promise<void> {
+		const member = `${jobId}:${dispatchId}`;
+		const timestamp = Date.now();
 
-		// Poll each queue stream
-		const queues = await this.getRegisteredQueues();
+		// Remove from old status index and add to new
+		const statuses = [
+			JobStatus.PENDING,
+			JobStatus.RUNNING,
+			JobStatus.COMPLETED,
+			JobStatus.FAILED,
+			JobStatus.CANCELLED,
+			JobStatus.SCHEDULED_FOR_RETRY
+		];
 
-		for (const queue of queues) {
-			const streamName = this.getStreamKey(queue);
+		// Remove from all status indices except the new one
+		const removeOperations = statuses
+			.filter((status) => status !== newStatus)
+			.map((status) =>
+				this.commandClient.send('ZREM', [`${this.options.keyPrefix}:idx:status:${status}`, member])
+			);
 
-			try {
-				// Ensure consumer group exists
-				await this.ensureConsumerGroupExists(streamName);
+		// Add to new status index
+		const addOperation = this.commandClient.send('ZADD', [
+			`${this.options.keyPrefix}:idx:status:${newStatus}`,
+			timestamp.toString(),
+			member
+		]);
 
-				let messages: { [stream: string]: Array<[string, string[]]> };
+		// Execute all operations (auto-pipelined)
+		await Promise.all([...removeOperations, addOperation]);
+	}
 
-				if (this.checkLogs.get(queue) ?? true) {
-					// Read pending messages first using raw command
-					messages =
-						(await this.redisCommand('XREADGROUP', [
-							'GROUP',
-							this.options.consumerGroup,
-							this.consumerId,
-							'COUNT',
-							this.options.batchSize,
-							'STREAMS',
-							streamName,
-							0
-						])) ?? {};
-				} else {
-					// Then read new messages using raw command
-					messages =
-						(await this.redisCommand('XREADGROUP', [
-							'GROUP',
-							this.options.consumerGroup,
-							this.consumerId,
-							'COUNT',
-							this.options.batchSize,
-							'STREAMS',
-							streamName,
-							'>'
-						])) ?? {};
-				}
+	/**
+	 * Get job from index
+	 */
+	private async getJobFromIndex(
+		jobId: string,
+		dispatchId: string,
+		queue: string
+	): Promise<JobIndexEntry | null> {
+		const member = `${jobId}:${dispatchId}`;
 
-				await this.processMessages(messages[streamName], queue);
-			} catch (error) {
-				console.error(error);
-				if (!String(error).includes('timeout')) {
-					this.error(`Error reading from stream ${streamName}: ${error}`);
+		// Check if job exists in queue index
+		const score = await this.commandClient.zscore(
+			`${this.options.keyPrefix}:idx:queue:${queue}`,
+			member
+		);
+
+		if (score) {
+			// Get status from status indices
+			const statuses = [
+				JobStatus.PENDING,
+				JobStatus.RUNNING,
+				JobStatus.COMPLETED,
+				JobStatus.FAILED,
+				JobStatus.CANCELLED,
+				JobStatus.SCHEDULED_FOR_RETRY
+			];
+
+			for (const status of statuses) {
+				const exists = await this.commandClient.zscore(
+					`${this.options.keyPrefix}:idx:status:${status}`,
+					member
+				);
+
+				if (exists) {
+					return {
+						jobId,
+						dispatchId,
+						queue,
+						status,
+						priority: 10,
+						timestamp: parseInt(score, 10)
+					};
 				}
 			}
 		}
+
+		return null;
 	}
 
 	/**
-	 * Process messages from Redis stream
+	 * Store job status in Redis
 	 */
-	private async processMessages(messages: Array<[string, string[]]>, queue: string): Promise<void> {
-		if (!messages || messages.length === 0) {
-			this.checkLogs.set(queue, !(this.checkLogs.get(queue) ?? true));
-			return;
-		}
+	private async storeJobStatus(status: JobStatusInfo): Promise<void> {
+		const statusKey = this.getJobStatusKey(status.jobId, status.dispatchId, status.queue);
 
-		const streamName = this.getStreamKey(queue);
+		const fields = [
+			'jobId',
+			status.jobId,
+			'dispatchId',
+			status.dispatchId,
+			'queue',
+			status.queue,
+			'status',
+			status.status,
+			'retries',
+			status.retries.toString(),
+			'createdAt',
+			status.createdAt,
+			'updatedAt',
+			status.updatedAt || Date.now().toString()
+		];
 
-		for (const [messageId, fields] of messages) {
-			try {
-				// Convert Redis hash format back to message object
-				const message = this.deserializeMessage(fields, queue);
+		if (status.error) fields.push('error', status.error);
+		if (status.startedAt) fields.push('startedAt', status.startedAt);
+		if (status.completedAt) fields.push('completedAt', status.completedAt);
+		if (status.messageId) fields.push('messageId', status.messageId);
 
-				// Update last processed ID
-				this.lastIds.set(streamName, messageId);
+		await this.commandClient.hmset(statusKey, fields);
+		await this.commandClient.expire(statusKey, this.options.statusTTL);
+	}
 
-				// For job:process messages, first check if this is a duplicate
-				if (message.type === 'job:process') {
-					// Check if we already have status for this job
-					const statusKey = this.getJobStatusKey(message.jobId, message.dispatchId, queue);
-					const exists = await this.redisCommand('EXISTS', [statusKey]);
-
-					if (exists) {
-						const statusInfo = await this.getJobStatus(message.jobId, message.dispatchId, queue);
-						if (statusInfo.status !== JobStatus.PENDING) {
-							// Job already exists, skip processing
-							this.debug(`Skipping duplicate job message for ${message.jobId}`);
-							await this.redisCommand('XACK', [streamName, this.options.consumerGroup, messageId]);
-							continue;
-						}
-					}
-				}
-
-				// Trigger message handlers
-				for (const handler of this.messageHandlers) {
-					try {
-						await handler(message);
-					} catch (error) {
-						this.error(`Error in message handler: ${error}`);
-					}
-				}
-
-				// Track completed or failed job messages for cleanup
-				if (
-					(message.type === 'job:result' || message.type === 'job:status') &&
-					(message.status === JobStatus.COMPLETED ||
-						message.status === JobStatus.FAILED ||
-						message.status === JobStatus.CANCELLED)
-				) {
-					this.trackCompletedMessage(messageId, streamName);
-				}
-
-				// Acknowledge message
-				await this.redisCommand('XACK', [streamName, this.options.consumerGroup, messageId]);
-			} catch (error) {
-				this.error(`Error processing message ${messageId}: ${error}`);
+	/**
+	 * Ensure consumer group exists for a stream
+	 */
+	private async ensureConsumerGroupExists(streamKey: string): Promise<void> {
+		try {
+			// Try to create the consumer group
+			await this.commandClient.send('XGROUP', [
+				'CREATE',
+				streamKey,
+				this.options.consumerGroup,
+				'0',
+				'MKSTREAM'
+			]);
+			this.debug(`Created consumer group ${this.options.consumerGroup} for ${streamKey}`);
+		} catch (error: any) {
+			// Group might already exist, which is fine
+			if (!error.message?.includes('BUSYGROUP')) {
+				this.error(`Error creating consumer group: ${error}`);
 			}
 		}
 	}
@@ -892,11 +866,11 @@ export class RedisTransport extends InteractsWithConsole implements Transport {
 	 */
 	private async getRegisteredQueues(): Promise<string[]> {
 		try {
+			// Get all stream keys
 			const pattern = `${this.options.keyPrefix}:stream:*`;
-			const keys = await this.redisCommand('KEYS', [pattern]);
+			const keys = await this.commandClient.keys(pattern);
 
-			// Ensure keys is an array
-			if (!Array.isArray(keys)) {
+			if (!Array.isArray(keys) || keys.length === 0) {
 				return ['default'];
 			}
 
@@ -905,191 +879,100 @@ export class RedisTransport extends InteractsWithConsole implements Transport {
 				.filter(Boolean);
 		} catch (error) {
 			this.error(`Failed to get registered queues: ${error}`);
-			return ['default']; // Return default queue on error
+			return ['default'];
 		}
 	}
 
 	/**
-	 * Ensure a stream exists
+	 * Schedule periodic cleanup operations
 	 */
-	private async ensureStreamExists(streamName: string): Promise<void> {
-		try {
-			// Check if stream exists by trying to get info using raw command
-			const streamInfo = await this.redisCommand('XINFO', ['STREAM', streamName]).catch(() => null);
+	private scheduleCleanup(): void {
+		const cleanupInterval = 5 * 60 * 1000; // 5 minutes
 
-			if (!streamInfo) {
-				// Create stream with a dummy message that we'll remove
-				const messageId = await this.redisCommand('XADD', [streamName, '*', 'init', 'true']);
-				await this.redisCommand('XDEL', [streamName, messageId]);
-				this.debug(`Created stream ${streamName}`);
+		this.cleanupTimer = setInterval(async () => {
+			try {
+				await this.performCleanup();
+			} catch (error) {
+				this.error(`Error during cleanup: ${error}`);
 			}
-		} catch (error) {
-			this.error(`Failed to ensure stream ${streamName} exists: ${error}`);
-			// Don't throw - just log the error and continue
-		}
+		}, cleanupInterval);
+
+		this.debug(`Scheduled cleanup every ${cleanupInterval / 1000} seconds`);
 	}
 
 	/**
-	 * Ensure a consumer group exists for a stream
+	 * Perform cleanup of old jobs and indices
 	 */
-	private async ensureConsumerGroupExists(streamName: string): Promise<void> {
-		// Skip if already created
-		if (this.consumerGroupCreated.has(streamName)) {
-			return;
+	private async performCleanup(): Promise<void> {
+		this.debug('Starting cleanup operation');
+
+		const cutoff = Date.now() - this.options.completedJobRetention * 1000;
+		const queues = await this.getRegisteredQueues();
+
+		// Clean up completed jobs from indices
+		const completedStatuses = [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED];
+
+		for (const status of completedStatuses) {
+			const indexKey = `${this.options.keyPrefix}:idx:status:${status}`;
+
+			// Remove old entries from index
+			await this.commandClient.send('ZREMRANGEBYSCORE', [indexKey, '-inf', cutoff.toString()]);
 		}
 
-		try {
-			// Check if consumer group exists using raw command
-			const groups = await this.redisCommand('XINFO', ['GROUPS', streamName]).catch(() => []);
+		// Trim streams to max size
+		for (const queue of queues) {
+			const streamKey = this.getStreamKey(queue);
 
-			const groupExists =
-				Array.isArray(groups) && groups.some((group) => group[1] === this.options.consumerGroup);
+			// Get stream length
+			const length = (await this.commandClient.send('XLEN', [streamKey])) as number;
 
-			if (!groupExists) {
-				// Create consumer group from the beginning of the stream using raw command
-				await this.redisCommand('XGROUP', [
-					'CREATE',
-					streamName,
-					this.options.consumerGroup,
-					'0',
-					'MKSTREAM'
+			if (length > this.options.maxStreamSize) {
+				// Trim to max size
+				await this.commandClient.send('XTRIM', [
+					streamKey,
+					'MAXLEN',
+					'~',
+					this.options.maxStreamSize.toString()
 				]);
-				this.debug(`Created consumer group ${this.options.consumerGroup} for stream ${streamName}`);
-			}
 
-			// Mark as created
-			this.consumerGroupCreated.add(streamName);
-		} catch (error: any) {
-			// Check if this is a BUSYGROUP error
-			if (error.toString().includes('BUSYGROUP')) {
-				// Group already exists, which is fine
-				this.debug(
-					`Consumer group ${this.options.consumerGroup} already exists for stream ${streamName}`
-				);
-
-				// Mark as created since it exists
-				this.consumerGroupCreated.add(streamName);
-			} else {
-				// This is a different error, log and rethrow
-				this.error(`Failed to ensure consumer group exists: ${error}`);
-				throw error;
+				this.debug(`Trimmed stream ${streamKey} from ${length} to ~${this.options.maxStreamSize}`);
 			}
 		}
+
+		// Clean up old job status keys
+		const statusPattern = `${this.options.keyPrefix}:status:*`;
+		const statusKeys = await this.commandClient.keys(statusPattern);
+
+		for (const key of statusKeys) {
+			const ttl = await this.commandClient.ttl(key);
+
+			// If key has no TTL or expired, delete it
+			if (ttl === -1 || ttl === -2) {
+				await this.commandClient.del(key);
+			}
+		}
+
+		this.debug('Cleanup operation completed');
 	}
 
 	/**
-	 * Store job status in Redis
+	 * Extract queue name from a transport event
 	 */
-	private async storeJobStatus(status: JobStatusInfo): Promise<void> {
-		try {
-			const statusKey = this.getJobStatusKey(status.jobId, status.dispatchId, status.queue);
-
-			// Store in Redis hash using raw command
-			// Build array of hash field-value pairs
-			const hashFields: string[] = [
-				'jobId',
-				status.jobId,
-				'queue',
-				status.queue,
-				'status',
-				status.status,
-				'retries',
-				status.retries.toString(),
-				'createdAt',
-				status.createdAt
-			];
-
-			// Add optional fields if present
-			if (status.startedAt) {
-				hashFields.push('startedAt', status.startedAt);
-			}
-			if (status.completedAt) {
-				hashFields.push('completedAt', status.completedAt);
-			}
-			if (status.error) {
-				hashFields.push('error', status.error);
-			}
-			if (status.messageId) {
-				hashFields.push('messageId', status.messageId);
-			}
-
-			// Ensure updatedAt is set
-			const updatedAt = status.updatedAt || Date.now().toString();
-			hashFields.push('updatedAt', updatedAt);
-
-			await this.redisCommand('HSET', [statusKey, ...hashFields]);
-
-			// Set TTL using raw command
-			await this.redisCommand('EXPIRE', [statusKey, this.options.statusTTL]);
-
-			// If this is a new job with an initial status, notify any handlers
-			if (status.status === JobStatus.PENDING || status.status === JobStatus.SCHEDULED_FOR_RETRY) {
-				for (const handler of this.messageHandlers) {
-					try {
-						handler({
-							type: 'job:status',
-							jobId: status.jobId,
-							dispatchId: status.dispatchId,
-							queue: status.queue,
-							status: status.status,
-							createdAt: status.createdAt,
-							updatedAt
-						});
-					} catch (error) {
-						this.error(`Error in message handler: ${error}`);
-					}
-				}
-			}
-
-			// If this job is completed, failed, or cancelled, mark for stream cleanup
-			if (
-				status.status === JobStatus.COMPLETED ||
-				status.status === JobStatus.FAILED ||
-				status.status === JobStatus.CANCELLED
-			) {
-				// Try to find a message ID if we don't already have one
-				let messageId: string | null = status.messageId ?? null;
-				if (!messageId) {
-					messageId = await this.findJobMessageId(status.jobId, status.dispatchId, status.queue);
-				}
-
-				if (messageId) {
-					const streamKey = this.getStreamKey(status.queue);
-					this.trackCompletedMessage(messageId, streamKey);
-
-					// Notify handlers of job completion
-					for (const handler of this.messageHandlers) {
-						try {
-							handler({
-								type: 'job:result',
-								jobId: status.jobId,
-								dispatchId: status.dispatchId,
-								queue: status.queue,
-								status: status.status,
-								error: status.error,
-								completedAt: status.completedAt || new Date().toISOString(),
-								retries: status.retries
-							});
-						} catch (error) {
-							this.error(`Error in message handler: ${error}`);
-						}
-					}
-				}
-			}
-		} catch (error) {
-			this.error(`Failed to store job status: ${error}`);
-			throw new Error(`Failed to store job status: ${error}`);
+	private extractQueueName(message: TransportEvent): string {
+		if ('queue' in message && typeof message.queue === 'string') {
+			return message.queue;
 		}
+		return 'default';
 	}
 
 	/**
-	 * Serialize a message for Redis
+	 * Serialize a message for Redis storage
 	 */
 	private serializeMessage(message: TransportEvent): string[] {
 		const fields: string[] = ['type', message.type, 'timestamp', Date.now().toString()];
 
-		// Add queue if present in message type
-		if ('queue' in message && typeof message.queue === 'string') {
+		// Add queue if present
+		if ('queue' in message && message.queue) {
 			fields.push('queue', message.queue);
 		}
 
@@ -1106,8 +989,6 @@ export class RedisTransport extends InteractsWithConsole implements Transport {
 					'dispatchId',
 					message.dispatchId
 				);
-
-				// Add options if present
 				if (message.options) {
 					fields.push('options', JSON.stringify(message.options));
 				}
@@ -1118,58 +999,27 @@ export class RedisTransport extends InteractsWithConsole implements Transport {
 			case 'job:result':
 				fields.push('jobId', message.jobId);
 				fields.push('dispatchId', message.dispatchId);
-				if (message.type !== 'job:cancel' && message.status) {
-					fields.push('status', message.status);
+				if (message.type !== 'job:cancel') {
+					if (message.status) fields.push('status', message.status);
+					if (message.error) fields.push('error', message.error);
+					if (message.retries !== undefined) {
+						fields.push('retries', message.retries.toString());
+					}
+					if ('completedAt' in message && message.completedAt) {
+						fields.push('completedAt', message.completedAt);
+					}
 				}
-				if (message.type !== 'job:cancel' && message.error) {
-					fields.push('error', message.error);
-				}
-				if ((message as any).retries !== undefined) {
-					fields.push('retries', (message as any).retries);
-				}
-				if ((message as any).startedAt) {
-					fields.push('startedAt', (message as any).startedAt);
-				}
-				if ((message as any).completedAt) {
-					fields.push('completedAt', (message as any).completedAt);
-				}
-				break;
-
-			case 'job:cancelAll':
-				// No additional fields needed
 				break;
 
 			case 'worker:register':
-				fields.push('workerId', message.workerId, 'queues', JSON.stringify(message.queues ?? []));
+				fields.push('workerId', message.workerId);
+				if (message.queues) {
+					fields.push('queues', JSON.stringify(message.queues));
+				}
 				break;
 
 			case 'worker:unregister':
 				fields.push('workerId', message.workerId);
-				break;
-
-			case 'worker:status':
-				fields.push(
-					'workerId',
-					message.workerId,
-					'status',
-					message.status,
-					'queues',
-					JSON.stringify(message.queues),
-					'processing',
-					message.processing.toString(),
-					'waiting',
-					message.waiting.toString()
-				);
-				break;
-
-			case 'worker:ready':
-				fields.push('id', message.id, 'queues', JSON.stringify(message.queues));
-				if (message.status) {
-					fields.push('status', message.status);
-				}
-				if (message.timestamp) {
-					fields.push('timestamp', message.timestamp.toString());
-				}
 				break;
 		}
 
@@ -1179,9 +1029,9 @@ export class RedisTransport extends InteractsWithConsole implements Transport {
 	/**
 	 * Deserialize a message from Redis
 	 */
-	private deserializeMessage(fields: any[], queue: string): TransportEvent {
-		// Convert array of field/value pairs to object
+	private deserializeMessage(fields: string[], queue: string): TransportEvent {
 		const data: Record<string, string> = {};
+
 		for (let i = 0; i < fields.length; i += 2) {
 			data[fields[i]] = fields[i + 1];
 		}
@@ -1196,9 +1046,9 @@ export class RedisTransport extends InteractsWithConsole implements Transport {
 					type: 'job:process',
 					job: data.job,
 					args: JSON.parse(data.args || '[]'),
-					options: data.options ? JSON.parse(data.options) : undefined,
 					jobId: data.jobId,
-					dispatchId: data.dispatchId
+					dispatchId: data.dispatchId,
+					options: data.options ? JSON.parse(data.options) : undefined
 				};
 
 			case 'job:cancel':
@@ -1209,12 +1059,6 @@ export class RedisTransport extends InteractsWithConsole implements Transport {
 					dispatchId: data.dispatchId
 				};
 
-			case 'job:cancelAll':
-				return {
-					...baseMessage,
-					type: 'job:cancelAll'
-				};
-
 			case 'job:status':
 				return {
 					...baseMessage,
@@ -1223,9 +1067,7 @@ export class RedisTransport extends InteractsWithConsole implements Transport {
 					dispatchId: data.dispatchId,
 					status: data.status,
 					error: data.error,
-					retries: data.retries ? parseInt(data.retries, 10) : 0,
-					startedAt: data.startedAt,
-					completedAt: data.completedAt
+					retries: data.retries ? parseInt(data.retries, 10) : undefined
 				};
 
 			case 'job:result':
@@ -1239,46 +1081,98 @@ export class RedisTransport extends InteractsWithConsole implements Transport {
 					completedAt: data.completedAt || new Date().toISOString()
 				};
 
-			case 'worker:register':
-				return {
-					...baseMessage,
-					type: 'worker:register',
-					workerId: data.workerId,
-					queues: data.queues ? JSON.parse(data.queues) : []
-				};
-
-			case 'worker:unregister':
-				return {
-					...baseMessage,
-					type: 'worker:unregister',
-					workerId: data.workerId
-				};
-
-			case 'worker:status':
-				return {
-					...baseMessage,
-					type: 'worker:status',
-					workerId: data.workerId,
-					queues: data.queues ? JSON.parse(data.queues) : [],
-					status: data.status as any,
-					processing: parseInt(data.processing || '0', 10),
-					waiting: parseInt(data.waiting || '0', 10)
-				};
-
-			case 'worker:ready':
-				return {
-					...baseMessage,
-					type: 'worker:ready',
-					id: data.id,
-					queues: data.queues ? JSON.parse(data.queues) : [],
-					status: data.status,
-					timestamp: data.timestamp ? parseInt(data.timestamp, 10) : undefined
-				};
-
 			default:
-				// Unknown message type
 				return baseMessage as any;
 		}
+	}
+
+	/**
+	 * Notify handlers about lock release
+	 */
+	private notifyLockRelease(jobId: string, queue: string): void {
+		// Remove from local lock map
+		this.jobLocks.delete(jobId);
+
+		// Notify all handlers
+		for (const handler of this.messageHandlers) {
+			try {
+				handler({
+					type: 'job:update',
+					jobId,
+					dispatchId: '',
+					queue,
+					status: 'lock_released',
+					updates: {}
+				});
+			} catch (error) {
+				this.error(`Error notifying lock release: ${error}`);
+			}
+		}
+	}
+
+	/**
+	 * Check if a job is locked
+	 */
+	async isJobLocked(jobId: string, queue: string): Promise<boolean> {
+		// Check local cache first
+		const localLock = this.jobLocks.get(jobId);
+		if (localLock && localLock.lockedUntil > Date.now()) {
+			return true;
+		}
+
+		// Check Redis
+		const lockKey = `${this.options.keyPrefix}:lock:${queue}:${jobId}`;
+		const exists = await this.commandClient.exists(lockKey);
+
+		return exists;
+	}
+
+	/**
+	 * Acquire a lock for a job
+	 */
+	async acquireJobLock(jobId: string, queue: string, duration: number = 60000): Promise<boolean> {
+		const lockKey = `${this.options.keyPrefix}:lock:${queue}:${jobId}`;
+		const lockValue = `${this.consumerId}:${Date.now()}`;
+
+		// Try to acquire lock with NX (only if not exists)
+		const result = await this.commandClient.set(
+			lockKey,
+			lockValue,
+			'PX',
+			duration.toString(),
+			'NX'
+		);
+
+		if (result === 'OK') {
+			// Store in local cache
+			this.jobLocks.set(jobId, {
+				lockedUntil: Date.now() + duration,
+				queue
+			});
+
+			this.debug(`Acquired lock for job ${jobId} in queue ${queue}`);
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Release a job lock
+	 */
+	async releaseJobLock(jobId: string, queue: string): Promise<void> {
+		const lockKey = `${this.options.keyPrefix}:lock:${queue}:${jobId}`;
+
+		// Delete from Redis
+		await this.commandClient.del(lockKey);
+
+		// Remove from local cache
+		this.jobLocks.delete(jobId);
+
+		// Notify via pub/sub that lock was released
+		await this.publisherClient.publish(`${this.options.keyPrefix}:lock:${queue}:released`, jobId);
+
+		this.debug(`Released lock for job ${jobId} in queue ${queue}`);
 	}
 
 	/**
@@ -1300,259 +1194,5 @@ export class RedisTransport extends InteractsWithConsole implements Transport {
 	 */
 	private getWorkerKey(workerId: string): string {
 		return `${this.options.keyPrefix}:worker:${workerId}`;
-	}
-
-	/**
-	 * Track completed message for later cleanup
-	 */
-	private trackCompletedMessage(messageId: string, streamKey: string): void {
-		// Only track if cleanup is enabled
-		if (this.options.cleanupCompletedJobs) {
-			this.completedMessageIds.set(messageId, {
-				streamKey,
-				timestamp: Date.now()
-			});
-			this.debug(`Marked message ${messageId} for future cleanup`);
-		}
-	}
-
-	/**
-	 * Schedule periodic stream cleanup
-	 */
-	private scheduleStreamCleanup(): void {
-		if (this.cleanupTimer) {
-			clearInterval(this.cleanupTimer);
-		}
-
-		// Run cleanup every 5 minutes
-		const cleanupInterval = 5 * 60 * 1000;
-
-		this.cleanupTimer = setInterval(() => {
-			this.cleanupStreams().catch((error) => {
-				this.error(`Error during stream cleanup: ${error}`);
-			});
-		}, cleanupInterval);
-
-		this.debug(`Scheduled stream cleanup every ${cleanupInterval / 1000} seconds`);
-	}
-
-	/**
-	 * Find expired message IDs for cleanup
-	 */
-	private async cleanupStreams(): Promise<void> {
-		if (!this.options.cleanupCompletedJobs) {
-			return;
-		}
-
-		this.debug('Starting stream cleanup for completed jobs');
-
-		const now = Date.now();
-		const retentionMs = this.options.completedJobRetention * 1000;
-		const expiredIds = new Map<string, string[]>(); // streamKey -> message IDs
-		const expiredStatusKeys: string[] = []; // status keys to delete
-
-		// Find all queues
-		const queues = await this.getRegisteredQueues();
-
-		// For each queue, find completed jobs older than retention period
-		for (const queueName of queues) {
-			const streamKey = this.getStreamKey(queueName);
-
-			try {
-				// Get all status keys for this queue
-				const statusPattern = `${this.options.keyPrefix}:status:${queueName}:*`;
-				const statusKeys: string[] = await this.redisCommand('KEYS', [statusPattern]);
-
-				for (const statusKey of statusKeys) {
-					// Get job status
-					const statusData = await this.redisCommand('HGETALL', [statusKey]);
-					if (!statusData || statusData.length === 0) continue;
-
-					// Convert to object
-					const status: Record<string, string> = {};
-					for (let i = 0; i < statusData.length; i += 2) {
-						status[statusData[i]] = statusData[i + 1];
-					}
-
-					// Check if job is completed and older than retention period
-					if (
-						(status.status === JobStatus.COMPLETED ||
-							status.status === JobStatus.FAILED ||
-							status.status === JobStatus.CANCELLED) &&
-						status.updatedAt &&
-						now - parseInt(status.updatedAt) > retentionMs
-					) {
-						// Extract job ID from status key
-						const parts = statusKey.split(':');
-						const dispatchId = parts.pop()!;
-						const jobId = parts.pop()!;
-
-						// Add status key to list for deletion
-						expiredStatusKeys.push(statusKey);
-
-						// If we have the message ID stored, use it directly
-						if (status.messageId) {
-							if (!expiredIds.has(streamKey)) {
-								expiredIds.set(streamKey, []);
-							}
-							expiredIds.get(streamKey)!.push(status.messageId);
-						} else {
-							// Otherwise try to find the message ID
-							const messageId = await this.findJobMessageId(jobId, dispatchId, queueName);
-
-							if (messageId) {
-								if (!expiredIds.has(streamKey)) {
-									expiredIds.set(streamKey, []);
-								}
-								expiredIds.get(streamKey)!.push(messageId);
-							}
-						}
-					}
-				}
-			} catch (error) {
-				this.error(`Error finding completed jobs for queue ${queueName}: ${error}`);
-			}
-		}
-
-		// Delete expired messages from each stream
-		for (const [streamKey, messageIds] of expiredIds.entries()) {
-			if (messageIds.length > 0) {
-				try {
-					// Delete messages in batches of 100
-					for (let i = 0; i < messageIds.length; i += 100) {
-						const batch = messageIds.slice(i, i + 100);
-						await this.redisCommand('XDEL', [streamKey, ...batch]);
-					}
-
-					this.debug(`Cleaned up ${messageIds.length} completed messages from stream ${streamKey}`);
-
-					// Remove from tracking map
-					for (const messageId of messageIds) {
-						this.completedMessageIds.delete(messageId);
-					}
-				} catch (error) {
-					this.error(`Error deleting completed messages from stream ${streamKey}: ${error}`);
-				}
-			}
-		}
-
-		// Delete expired status keys
-		if (expiredStatusKeys.length > 0) {
-			try {
-				// Delete in batches of 100
-				for (let i = 0; i < expiredStatusKeys.length; i += 100) {
-					const batch = expiredStatusKeys.slice(i, i + 100);
-					await this.redisCommand('DEL', batch);
-				}
-
-				this.debug(`Cleaned up ${expiredStatusKeys.length} job status records`);
-			} catch (error) {
-				this.error(`Error deleting expired status keys: ${error}`);
-			}
-		}
-
-		// Trim all streams to max size if configured
-		if (this.options.maxStreamSize > 0) {
-			await this.trimStreamsToMaxSize();
-		}
-	}
-
-	/**
-	 * Trim all streams to the maximum configured size
-	 */
-	private async trimStreamsToMaxSize(): Promise<void> {
-		try {
-			const queues = await this.getRegisteredQueues();
-
-			for (const queue of queues) {
-				const streamKey = this.getStreamKey(queue);
-
-				// Get stream length
-				const streamLength = await this.redisCommand('XLEN', [streamKey]);
-
-				if (streamLength > this.options.maxStreamSize) {
-					// Trim the stream to maxStreamSize entries
-					await this.redisCommand('XTRIM', [
-						streamKey,
-						'MAXLEN',
-						'~', // Approximate trimming for better performance
-						this.options.maxStreamSize.toString()
-					]);
-
-					this.debug(
-						`Trimmed stream ${streamKey} from ${streamLength} to ~${this.options.maxStreamSize} entries`
-					);
-				}
-			}
-		} catch (error) {
-			this.error(`Error trimming streams to max size: ${error}`);
-		}
-	}
-
-	/**
-	 * Check if a job with the same ID is currently locked
-	 * @param jobId The job ID to check
-	 * @param queue The queue name
-	 * @returns True if the job is locked, false otherwise
-	 */
-	public async isJobLocked(jobId: string, queue: string): Promise<boolean> {
-		// First check local cache
-		const localLock = this.jobLocks.get(jobId);
-		if (localLock && localLock.lockedUntil > Date.now()) {
-			return true;
-		}
-
-		// Check Redis for distributed lock
-		const lockKey = `${this.options.keyPrefix}:lock:${queue}:${jobId}`;
-		const lockExists = await this.redisCommand('EXISTS', [lockKey]);
-
-		return !!lockExists;
-	}
-
-	/**
-	 * Acquire a lock for a job ID
-	 * @param jobId The job ID to lock
-	 * @param queue The queue name
-	 * @param duration Duration in milliseconds to lock the job
-	 * @returns True if lock was acquired, false otherwise
-	 */
-	public async acquireJobLock(
-		jobId: string,
-		queue: string,
-		duration: number = 60000
-	): Promise<boolean> {
-		const lockKey = `${this.options.keyPrefix}:lock:${queue}:${jobId}`;
-
-		// Try to set lock in Redis with NX (only if not exists)
-		const result = await this.redisCommand('SET', [
-			lockKey,
-			Date.now().toString(),
-			'PX',
-			duration.toString(),
-			'NX'
-		]);
-
-		if (result === 'OK') {
-			// Also store in local cache
-			this.jobLocks.set(jobId, { lockedUntil: Date.now() + duration, queue });
-			return true;
-		}
-
-		return false;
-	}
-
-	/**
-	 * Release a lock for a job ID
-	 * @param jobId The job ID to unlock
-	 * @param queue The queue name
-	 */
-	public async releaseJobLock(jobId: string, queue: string): Promise<void> {
-		const lockKey = `${this.options.keyPrefix}:lock:${queue}:${jobId}`;
-
-		// Remove from Redis
-		await this.redisCommand('DEL', [lockKey]);
-
-		// Remove from local cache
-		this.jobLocks.delete(jobId);
 	}
 }
