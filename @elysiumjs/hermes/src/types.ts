@@ -1,4 +1,4 @@
-// Copyright (c) 2025-present Workbud Technologies Inc. All rights reserved.
+// Copyright (c) 2026-present Workbud Technologies Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,9 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Service } from '@elysiumjs/core';
-import pino from 'pino';
+export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 
-const pinoFactory = () => pino();
+export type LogFormat = 'json' | 'pretty' | 'logfmt';
 
-Service.factory('elysium.hermes.pino', pinoFactory);
+export interface TransportConfig {
+	type: 'console' | 'file' | 'http';
+	options?: Record<string, unknown>;
+}
+
+export interface HermesConfig {
+	level: LogLevel;
+	format: LogFormat;
+	transports?: TransportConfig[];
+}
+
+export const DEFAULT_CONFIG: HermesConfig = {
+	level: 'info',
+	format: 'json'
+};

@@ -1,4 +1,4 @@
-// Copyright (c) 2025-present Workbud Technologies Inc. All rights reserved.
+// Copyright (c) 2026-present Workbud Technologies Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,4 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-export * from './src/index';
+export { HermesLogger } from './logger';
+export { HttpTransport } from './transports/http.transport';
+export type { HttpTransportOptions } from './transports/http.transport';
+export { Logged } from './decorators/logged';
+export type { LoggedOptions } from './decorators/logged';
+export type { HermesConfig, LogLevel, LogFormat, TransportConfig } from './types';
