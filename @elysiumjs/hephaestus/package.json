@@ -1,0 +1,48 @@
+{
+	"name": "@elysiumjs/hephaestus",
+	"version": "0.2.0",
+	"license": "Apache-2.0",
+	"description": "Compilation and bundling utilities for Elysium.js apps.",
+	"private": false,
+	"author": "Workbud Technologies Inc.",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/workbud/elysium"
+	},
+	"keywords": [
+		"elysium",
+		"framework",
+		"web",
+		"api",
+		"typescript",
+		"builder",
+		"compilation",
+		"bun"
+	],
+	"homepage": "https://github.com/workbud/elysium",
+	"module": "index.ts",
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"bin": {
+		"hephaestus": "./dist/hephaestus.js"
+	},
+	"scripts": {
+		"format": "prettier --write \"./src/**/*.ts\"",
+		"clean": "rimraf dist",
+		"build:js": "bun build ./src/index.ts ./src/hephaestus.ts --outdir ./dist --target bun -e zod --root ./src --minify",
+		"build:ts": "tsc",
+		"build": "bun run clean && bun run build:js && bun run build:ts",
+		"typecheck": "tsc --noEmit",
+		"prepublishOnly": "bun run build"
+	},
+	"dependencies": {
+		"zod": "^3.23.0"
+	},
+	"devDependencies": {
+		"@elysiumjs/core": "workspace:*"
+	},
+	"peerDependencies": {
+		"@elysiumjs/core": "workspace:^"
+	}
+}
