@@ -29,6 +29,7 @@ import { BaseCommand } from './base.command';
  * Maker class for creating Elysium.js commands.
  * @author Axel Nana <axel.nana@workbud.com>
  */
+@Command.register()
 export class MakeCommandCommand extends BaseCommand {
 	public static readonly command: string = 'make:command';
 	public static readonly description: string = 'Creates a new command.';

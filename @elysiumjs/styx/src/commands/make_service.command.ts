@@ -29,6 +29,7 @@ import { BaseCommand } from './base.command';
  * Maker command for creating Elysium services.
  * @author Axel Nana <axel.nana@workbud.com>
  */
+@Command.register()
 export class MakeServiceCommand extends BaseCommand {
 	public static readonly command: string = 'make:service';
 	public static readonly description: string = 'Creates a new service.';

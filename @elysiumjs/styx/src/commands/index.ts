@@ -14,10 +14,6 @@
 
 export * from './base.command';
 
-export * from './heracles_clean.command';
-export * from './heracles_list.command';
-export * from './heracles_work.command';
-
 export * from './make_command.command';
 export * from './make_controller.command';
 export * from './make_job.command';

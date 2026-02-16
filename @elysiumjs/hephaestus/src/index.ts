@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import '@elysiumjs/core';
+import './commands';
+
 export type { HephaestusConfig, PlatformTarget } from './types';
 export { HephaestusConfigSchema, PlatformTargetSchema } from './types';
 
@@ -21,6 +24,6 @@ export { BinaryBuilder } from './builder';
 export type { AssetManifest } from './assets';
 export { AssetEmbedder } from './assets';
 
-export { DockerGenerator } from './commands/docker.command';
+export { DockerGenerator } from './commands/docker.generator';
 export { loadConfig } from './config';
 export { bunTarget, detectCurrentPlatform, getOutputName } from './platform';

@@ -29,6 +29,7 @@ import { BaseCommand } from './base.command';
  * Maker class for creating Elysium.js jobs.
  * @author Axel Nana <axel.nana@workbud.com>
  */
+@Command.register()
 export class MakeJobCommand extends BaseCommand {
 	public static readonly command: string = 'make:job';
 	public static readonly description: string = 'Creates a new job.';

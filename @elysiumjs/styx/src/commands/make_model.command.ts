@@ -29,6 +29,7 @@ import { BaseCommand } from './base.command';
  * Maker command for creating Elysium.js models.
  * @author Axel Nana <axel.nana@workbud.com>
  */
+@Command.register()
 export class MakeModelCommand extends BaseCommand {
 	public static readonly command: string = 'make:model';
 	public static readonly description: string = 'Creates a new model.';

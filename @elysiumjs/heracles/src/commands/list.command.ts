@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import type { JobClass } from '@elysiumjs/heracles';
+import type { JobClass } from '../job';
 
 import { Command, ConsoleFormat, InteractsWithConsole, Service } from '@elysiumjs/core';
 
 /**
- * Command used to clean a Redis stream.
+ * Command used to list all registered Heracles jobs.
  * @author Axel Nana <axel.nana@workbud.com>
  */
+@Command.register()
 export class HeraclesListCommand extends Command {
 	public static readonly command: string = 'heracles:list';
 	public static readonly description: string = 'List all registered Heracles jobs and schedulers.';
-	public static readonly dev: boolean = false;
 
 	public async run(): Promise<void> {
 		const jobs = Service.keys('elysium.heracles.job.*');

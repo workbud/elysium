@@ -27,6 +27,7 @@ import { BaseCommand } from './base.command';
  * Command for creating Elysium.js modules.
  * @author Axel Nana <axel.nana@workbud.com>
  */
+@Command.register()
 export class ModuleNewCommand extends BaseCommand {
 	public static readonly command: string = 'module:new';
 	public static readonly description: string = 'Creates a new module.';

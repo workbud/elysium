@@ -1,5 +1,6 @@
 import { Command } from '@elysiumjs/core';
 
+@Command.register()
 export class {name} extends Command {
 	public static readonly command = '{command}';
 	public static readonly description = '{description}';

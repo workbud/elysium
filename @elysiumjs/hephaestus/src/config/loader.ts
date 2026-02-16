@@ -18,11 +18,7 @@ import { join } from 'node:path';
 
 import { HephaestusConfigSchema } from '../types';
 
-const CONFIG_FILENAMES = [
-	'hephaestus.config.ts',
-	'hephaestus.config.js',
-	'hephaestus.config.json'
-];
+const CONFIG_FILENAMES = ['hephaestus.config.ts', 'hephaestus.config.js', 'hephaestus.config.json'];
 
 /**
  * Loads and validates the Hephaestus build configuration from the project root.
@@ -46,7 +42,5 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<Hephaestu
 		}
 	}
 
-	throw new Error(
-		`No Hephaestus config found. Create one of: ${CONFIG_FILENAMES.join(', ')}`
-	);
+	throw new Error(`No Hephaestus config found. Create one of: ${CONFIG_FILENAMES.join(', ')}`);
 }

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import '@elysiumjs/core';
+import './commands';
 
 export type { JobProps, JobClass, JobMetadata } from './job';
 export type { JobDispatchOptions, QueueOptions, JobDispatchId } from './queue';

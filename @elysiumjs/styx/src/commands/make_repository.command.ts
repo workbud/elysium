@@ -29,6 +29,7 @@ import { BaseCommand } from './base.command';
  * Maker command for creating Elysium repositories.
  * @author Axel Nana <axel.nana@workbud.com>
  */
+@Command.register()
 export class MakeRepositoryCommand extends BaseCommand {
 	public static readonly command: string = 'make:repository';
 	public static readonly description: string = 'Creates a new repository.';

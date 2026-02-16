@@ -29,6 +29,7 @@ import { BaseCommand } from './base.command';
  * Maker command for creating Elysium validators.
  * @author Axel Nana <axel.nana@workbud.com>
  */
+@Command.register()
 export class MakeValidatorCommand extends BaseCommand {
 	public static readonly command: string = 'make:validator';
 	public static readonly description: string = 'Creates a new validator.';

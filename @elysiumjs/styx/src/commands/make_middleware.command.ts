@@ -29,6 +29,7 @@ import { BaseCommand } from './base.command';
  * Maker class for creating Elysium.js middlewares.
  * @author Axel Nana <axel.nana@workbud.com>
  */
+@Command.register()
 export class MakeMiddlewareCommand extends BaseCommand {
 	public static readonly command: string = 'make:middleware';
 	public static readonly description: string = 'Creates a new middleware.';

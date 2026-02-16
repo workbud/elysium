@@ -13,19 +13,18 @@
 // limitations under the License.
 
 import { Command, CommandArgumentType, Redis } from '@elysiumjs/core';
-import { JobStatus } from '@elysiumjs/heracles';
 
-import { BaseCommand } from './base.command';
+import { JobStatus } from '../job';
 
 /**
  * Command used to clean a Redis stream.
  * @author Axel Nana <axel.nana@workbud.com>
  */
-export class HeraclesCleanCommand extends BaseCommand {
+@Command.register()
+export class HeraclesCleanCommand extends Command {
 	public static readonly command: string = 'heracles:clean';
 	public static readonly description: string =
 		'Clean up Redis streams by removing completed and failed jobs.';
-	public static readonly dev: boolean = false;
 
 	@Command.arg({
 		name: 'redis',

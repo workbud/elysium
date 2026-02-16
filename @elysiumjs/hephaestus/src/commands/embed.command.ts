@@ -12,41 +12,40 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Command, CommandArgumentType } from '@elysiumjs/core';
+import { join } from 'node:path';
 
+import { Command } from '@elysiumjs/core';
+
+import { AssetEmbedder } from '../assets/embedder';
 import { loadConfig } from '../config/loader';
-import { DockerGenerator } from './docker.generator';
 
 /**
- * Command used to generate a Dockerfile for the compiled binary.
+ * Command used to generate asset loader module from configured patterns.
  * @author Axel Nana <axel.nana@workbud.com>
  */
 @Command.register()
-export class HephaestusDockerCommand extends Command {
-	public static readonly command: string = 'hephaestus:docker';
+export class HephaestusEmbedCommand extends Command {
+	public static readonly command: string = 'hephaestus:embed';
 	public static readonly description: string =
-		'Generate a Dockerfile for the compiled binary.';
+		'Generate asset loader module from configured patterns.';
 	public static override readonly dev: boolean = true;
-
-	@Command.arg({
-		name: 'output',
-		required: false,
-		description: 'Output directory for the Dockerfile',
-		type: CommandArgumentType.STRING,
-		default: '.'
-	})
-	private output: string = '.';
 
 	public async run(): Promise<void> {
 		try {
+			const spinner = this.spinner('Scanning and embedding assets');
+
 			const config = await loadConfig();
-			const generator = new DockerGenerator(config);
+			const embedder = new AssetEmbedder(config);
+			const loader = await embedder.embed();
+			const outputPath = join(config.output.dir, '__assets__.ts');
 
-			generator.generate(this.output);
+			await Bun.write(outputPath, loader);
 
-			this.success(`Dockerfile generated in ${this.output}`);
+			spinner.complete('Assets embedded successfully');
+			this.newLine();
+			this.success(`Asset loader generated: ${outputPath}`);
 		} catch (error: any) {
-			this.trace(error, 'Dockerfile generation failed');
+			this.trace(error, 'Asset embedding failed');
 			process.exit(1);
 		}
 	}

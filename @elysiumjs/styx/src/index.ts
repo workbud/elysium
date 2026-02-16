@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Command } from '@elysiumjs/core';
+import 'reflect-metadata';
+import '@elysiumjs/core';
+import './commands';
 
-/**
- * Base class for Styx commands.
- * @author Axel Nana <axel.nana@workbud.com>
- */
-export abstract class BaseCommand extends Command {
-	public static override readonly dev: boolean = true;
-}
+import { getProjectPath } from './utils';
+
+const projectPath = getProjectPath();
+const { App } = await import(`${projectPath}/src/app`);
+
+@App.register()
+export class StyxApp extends App {}

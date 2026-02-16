@@ -29,6 +29,7 @@ import { BaseCommand } from './base.command';
  * Maker class for creating Elysium.js controllers.
  * @author Axel Nana <axel.nana@workbud.com>
  */
+@Command.register()
 export class MakeControllerCommand extends BaseCommand {
 	public static readonly command: string = 'make:controller';
 	public static readonly description: string = 'Creates a new controller.';

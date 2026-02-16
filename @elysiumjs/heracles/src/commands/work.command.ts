@@ -13,18 +13,17 @@
 // limitations under the License.
 
 import { Command, CommandArgumentType, Redis } from '@elysiumjs/core';
-import { RedisWorker } from '@elysiumjs/heracles';
 
-import { BaseCommand } from './base.command';
+import { RedisWorker } from '../workers/redis.worker';
 
 /**
  * Command used to start an Heracles worker.
  * @author Axel Nana <axel.nana@workbud.com>
  */
-export class HeraclesWorkCommand extends BaseCommand {
+@Command.register()
+export class HeraclesWorkCommand extends Command {
 	public static readonly command: string = 'heracles:work';
 	public static readonly description: string = 'Start an Heracles worker for specific queues.';
-	public static readonly dev: boolean = false;
 
 	@Command.arg({
 		name: 'id',

@@ -24,6 +24,7 @@ import { BaseCommand } from './base.command';
  * Generates migration files.
  * @author Axel Nana <axel.nana@workbud.com>
  */
+@Command.register()
 export class MigrationGenerateCommand extends BaseCommand {
 	public static readonly command: string = 'migration:generate';
 	public static readonly description: string = 'Generates migration files.';

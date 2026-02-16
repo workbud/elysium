@@ -12,50 +12,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import 'reflect-metadata';
-import '@elysiumjs/core';
-
-import {
-	HeraclesCleanCommand,
-	HeraclesListCommand,
-	HeraclesWorkCommand,
-	MakeCommandCommand,
-	MakeControllerCommand,
-	MakeJobCommand,
-	MakeMiddlewareCommand,
-	MakeModelCommand,
-	MakeRepositoryCommand,
-	MakeServiceCommand,
-	MakeValidatorCommand,
-	MigrationGenerateCommand,
-	MigrationRunCommand,
-	ModuleNewCommand,
-	ModuleRenameCommand
-} from './commands';
-import { getProjectPath } from './utils';
-
-const projectPath = getProjectPath();
-const { App } = await import(`${projectPath}/src/app`);
-
-@App.register({
-	commands: [
-		HeraclesCleanCommand,
-		HeraclesListCommand,
-		HeraclesWorkCommand,
-		MakeCommandCommand,
-		MakeControllerCommand,
-		MakeJobCommand,
-		MakeMiddlewareCommand,
-		MakeModelCommand,
-		MakeRepositoryCommand,
-		MakeServiceCommand,
-		MakeValidatorCommand,
-		MigrationGenerateCommand,
-		MigrationRunCommand,
-		ModuleNewCommand,
-		ModuleRenameCommand
-	].filter((command) => (ELYSIUM_BUILD ? !command.dev : true))
-})
-class StyxApp extends App {}
+import { StyxApp } from '@elysiumjs/styx';
 
 new StyxApp();

@@ -48,14 +48,7 @@ export class BinaryBuilder {
 		const outputName = getOutputName(this.config.output.name, targetPlatform);
 		const outputPath = join(this.config.output.dir, outputName);
 
-		const args = [
-			'bun',
-			'build',
-			this.config.entry,
-			'--compile',
-			'--outfile',
-			outputPath
-		];
+		const args = ['bun', 'build', this.config.entry, '--compile', '--outfile', outputPath];
 
 		if (this.config.build.minify) args.push('--minify');
 		if (this.config.build.sourcemap) args.push('--sourcemap');

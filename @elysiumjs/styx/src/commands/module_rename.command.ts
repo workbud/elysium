@@ -23,6 +23,7 @@ import { BaseCommand } from './base.command';
  * Command for renaming Elysium.js modules.
  * @author Axel Nana <axel.nana@workbud.com>
  */
+@Command.register()
 export class ModuleRenameCommand extends BaseCommand {
 	public static readonly command: string = 'module:rename';
 	public static readonly description: string = 'Renames a module.';

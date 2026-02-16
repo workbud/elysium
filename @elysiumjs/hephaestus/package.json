@@ -24,13 +24,10 @@
 	"type": "module",
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",
-	"bin": {
-		"hephaestus": "./dist/hephaestus.js"
-	},
 	"scripts": {
 		"format": "prettier --write \"./src/**/*.ts\"",
 		"clean": "rimraf dist",
-		"build:js": "bun build ./src/index.ts ./src/hephaestus.ts --outdir ./dist --target bun -e zod --root ./src --minify",
+		"build:js": "bun build ./src/index.ts --outdir ./dist --target bun -e zod -e @elysiumjs/core --root ./src --minify",
 		"build:ts": "tsc",
 		"build": "bun run clean && bun run build:js && bun run build:ts",
 		"typecheck": "tsc --noEmit",
