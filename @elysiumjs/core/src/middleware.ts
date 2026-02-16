@@ -15,6 +15,7 @@
 import type { AnyElysia } from 'elysia';
 import type { Class } from 'type-fest';
 import type { Context } from './http';
+import type { LoggerInterface } from './logger';
 
 import { Application } from './app';
 import { Service } from './service';
@@ -121,6 +122,16 @@ export abstract class Middleware<TGuards extends string[] = []> {
 		class GuardedMiddleware extends this {}
 		Reflect.defineMetadata(Symbols.middlewareGuards, guards, GuardedMiddleware);
 		return GuardedMiddleware;
+	}
+
+	/**
+	 * Structured application logger resolved from the service container.
+	 * Returns a child logger with the middleware class name in context.
+	 * @author Axel Nana <axel.nana@workbud.com>
+	 */
+	protected get logger(): LoggerInterface {
+		const base = Service.get<LoggerInterface>('logger')!;
+		return base.child({ middleware: this.constructor.name });
 	}
 
 	/**

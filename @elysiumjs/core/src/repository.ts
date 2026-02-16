@@ -97,6 +97,13 @@ export interface RepositoryInterface<
 	 * @returns All the records in the database.
 	 */
 	deleteAll(): Promise<TModel['$inferSelect'][]>;
+
+	/**
+	 * Checks if a record exists in the database.
+	 * @param id The ID of the record to check.
+	 * @returns True if the record exists, false otherwise.
+	 */
+	exists(id: TId): Promise<boolean>;
 }
 
 /**
@@ -288,6 +295,16 @@ export const Repository = <
 		 */
 		public async deleteAll(): Promise<TSelect[]> {
 			return await this.db.delete(model.table).returning();
+		}
+
+		/**
+		 * Checks if a record exists in the database.
+		 * @param id The ID of the record to check.
+		 * @returns True if the record exists, false otherwise.
+		 */
+		public async exists(id: TId): Promise<boolean> {
+			const count = await this.db.$count(model.table, eq(model.table.id, id));
+			return count > 0;
 		}
 	}
 

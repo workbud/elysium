@@ -101,10 +101,33 @@ const isClass = <T, V>(value: Class<T> | V): value is Class<T> => {
 };
 
 /**
+ * Sentinel value to distinguish "lazy, not yet resolved" from a resolved entry.
+ * @author Axel Nana <axel.nana@workbud.com>
+ */
+const LAZY_SENTINEL = Symbol('lazy');
+
+/**
+ * Describes a lazy service entry in the registry.
+ * @author Axel Nana <axel.nana@workbud.com>
+ */
+interface LazyEntry {
+	[LAZY_SENTINEL]: true;
+	resolver: () => any;
+}
+
+/**
+ * Type guard to check if a registry entry is a lazy (unresolved) entry.
+ * @author Axel Nana <axel.nana@workbud.com>
+ */
+const isLazy = (value: unknown): value is LazyEntry => {
+	return typeof value === 'object' && value !== null && LAZY_SENTINEL in value;
+};
+
+/**
  * Storage for registered services.
  * @author Axel Nana <axel.nana@workbud.com>
  */
-const servicesRegistry = new Map<string, ServiceRegistration>();
+const servicesRegistry = new Map<string, ServiceRegistration | LazyEntry>();
 
 /**
  * Properties required when declaring a service using the `@service()` decorator.
@@ -189,6 +212,7 @@ export namespace Service {
 
 	/**
 	 * Retrieves a registered service's instance from the container.
+	 * Resolves lazy services on first access and caches the result.
 	 * @author Axel Nana <axel.nana@workbud.com>
 	 * @param service The name of the service, or its class.
 	 * @returns An instance of the registered service, or `null` if no service with that name/type was registered.
@@ -197,11 +221,35 @@ export namespace Service {
 		const name = isString(service) ? service : service.name;
 
 		if (exists(name)) {
-			const service = servicesRegistry.get(name)!;
-			return service.factory() as T;
+			const entry = servicesRegistry.get(name)!;
+
+			// Resolve lazy service on first access
+			if (isLazy(entry)) {
+				const instance = entry.resolver();
+				servicesRegistry.set(name, {
+					scope: ServiceScope.SINGLETON,
+					factory: () => instance
+				});
+				return instance as T;
+			}
+
+			return entry.factory() as T;
 		}
 
 		return null;
+	};
+
+	/**
+	 * Registers a lazy service that is only instantiated on first access.
+	 * @author Axel Nana <axel.nana@workbud.com>
+	 * @param name The name of the service.
+	 * @param resolver A factory function called on first access.
+	 */
+	export const registerLazy = <T>(name: string, resolver: () => T): void => {
+		if (servicesRegistry.has(name) && !isLazy(servicesRegistry.get(name))) {
+			throw new Error(`Service ${name} already registered`);
+		}
+		servicesRegistry.set(name, { [LAZY_SENTINEL]: true, resolver } as LazyEntry);
 	};
 
 	/**

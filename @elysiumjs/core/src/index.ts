@@ -29,10 +29,15 @@ export { ConsoleFormat, InteractsWithConsole } from './console';
 export { Database } from './database';
 export { Env } from './env';
 export { type EventData, type EventHandler, Event } from './event';
+export { type LoggerInterface, ConsoleLogger } from './logger';
 export { type Context, type Route, HttpControllerScope, Http } from './http';
 export { Job } from './job';
 export { Middleware } from './middleware';
-export { type ModelClass, Model, Tenancy } from './model';
+export { RequestLoggerMiddleware } from './middlewares/request-logger.middleware';
+export { type ModelClass, Model } from './model';
+export * as Tenancy from './tenancy';
+export { TenantMiddleware, SimpleTenantMiddleware, StrictTenantMiddleware } from './tenancy';
+export type { TenancyConfig, TenancyMode, ModelTenancyConfig } from './tenancy';
 export { type ModuleClass, Module } from './module';
 export { Redis } from './redis';
 export {

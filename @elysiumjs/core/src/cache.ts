@@ -32,7 +32,7 @@ export interface CacheInterface {
 	 *
 	 * @param key The key of the cached data.
 	 */
-	get<T>(key: string): Promise<T | null>;
+	get<T>(key: string): Promise<T | undefined>;
 
 	/**
 	 * Retrieves the cached data for a given list of keys.
@@ -40,14 +40,14 @@ export interface CacheInterface {
 	 *
 	 * @param keys The list of cached data keys.
 	 */
-	mget<T>(keys: string[]): Promise<Array<T | null>>;
+	mget<T>(keys: string[]): Promise<Array<T | undefined>>;
 
 	/**
 	 * Gets the TTL of the cached data with the given key.
 	 * @param key The key of the cached data.
-	 * @returns The TTL of the cached data, or `null` if the data does not exist.
+	 * @returns The TTL of the cached data, or `undefined` if the data does not exist.
 	 */
-	ttl(key: string): Promise<number | null>;
+	ttl(key: string): Promise<number | undefined>;
 
 	/**
 	 * Caches data under the given key and an optional TTL.
@@ -126,7 +126,7 @@ const makeCacheInterface = (store: KeyvStoreAdapter): CacheInterface => {
 				namespace: 'cache'
 			})
 		]
-	});
+	}) as Omit<CacheInterface, 'tags'>;
 
 	const tagsCache = new Map<string, Omit<CacheInterface, 'tags'>>();
 
@@ -144,7 +144,7 @@ const makeCacheInterface = (store: KeyvStoreAdapter): CacheInterface => {
 							namespace
 						})
 					]
-				});
+				}) as Omit<CacheInterface, 'tags'>;
 
 				tagsCache.set(namespace, cache);
 			}

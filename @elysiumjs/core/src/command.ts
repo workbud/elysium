@@ -17,6 +17,7 @@ import type { Class } from 'type-fest';
 import { isArray, trim } from 'radash';
 
 import { ConsoleFormat, InteractsWithConsole } from './console';
+import { Service } from './service';
 import { Symbols } from './utils';
 
 /**
@@ -119,6 +120,11 @@ export type CommandClass<T extends Command = Command> = Class<T> & {
 	 * The description of the command.
 	 */
 	readonly description: string;
+
+	/**
+	 * Whether the command is only available in development mode.
+	 */
+	readonly dev: boolean;
 };
 
 /**
@@ -145,6 +151,36 @@ export abstract class Command extends InteractsWithConsole {
 	 * This is displayed when displaying help messages for the command.
 	 */
 	public static readonly description: string = 'Command description';
+
+	/**
+	 * Whether the command is only available in development mode.
+	 * When set to `true`, the command will not be available in production builds.
+	 */
+	public static readonly dev: boolean = false;
+
+	/**
+	 * Registers a command in the service container for autodiscovery.
+	 *
+	 * Commands registered with this decorator will be automatically discovered
+	 * and made available in the CLI without needing to be listed explicitly.
+	 *
+	 * @param options Optional registration options.
+	 */
+	public static register(options: { name?: string } = {}): ClassDecorator {
+		return function (target) {
+			const commandClass = target as unknown as CommandClass;
+			const name = options.name ?? commandClass.command;
+			const serviceName = `elysium.command.${name}`;
+
+			if (Service.exists(serviceName)) {
+				return target;
+			}
+
+			Service.instance(serviceName, target);
+
+			return target;
+		} as ClassDecorator;
+	}
 
 	/**
 	 * Decorator for registering a command argument.

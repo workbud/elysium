@@ -16,16 +16,16 @@ import type { BuildExtraConfigColumns } from 'drizzle-orm';
 import type {
 	PgColumn,
 	PgColumnBuilderBase,
-	PgSchema,
 	PgTable,
 	PgTableExtraConfigValue
 } from 'drizzle-orm/pg-core';
 import type { TSchema } from 'elysia';
 
-import { getTableConfig, pgSchema, pgTable } from 'drizzle-orm/pg-core';
+import { getTableConfig, pgTable } from 'drizzle-orm/pg-core';
 import { t } from 'elysia';
 
 import { Application } from './app';
+import { getCurrentTenant, wrapTenantSchema } from './tenancy';
 
 /**
  * Creates a validation schema from a Drizzle table.
@@ -86,7 +86,14 @@ const parseTypes = (element: PgColumn) => {
 			case 'date':
 			case 'localDate':
 			case 'localDateTime':
-				return t.Date();
+				return t
+					.Transform(
+						t.String({
+							format: element.dataType === 'date' ? 'date' : 'date-time'
+						})
+					)
+					.Decode((date) => new Date(date))
+					.Encode((date) => date.toISOString());
 			case 'bigint':
 				return t.BigInt();
 			case 'buffer':
@@ -230,9 +237,12 @@ export const Model = <
 			}
 
 			if (this.supportTenancy) {
-				const tenant = Tenancy.getCurrentTenant() ?? 'public';
-				// @ts-expect-error typeof this strangely doesn't match the ModelClass type
-				return Tenancy.wrapTenant(tenant, this);
+				const tenant = getCurrentTenant() ?? 'public';
+				return wrapTenantSchema(
+					tenant,
+					this.tableName as TTableName,
+					this.columns as TColumnsMap
+				) as ReturnType<typeof pgTable<TTableName, TColumnsMap>>;
 			}
 
 			return table;
@@ -279,106 +289,3 @@ export const Model = <
 
 	return M;
 };
-
-/**
- * A map of tables registered for each tenant.
- * @author Axel Nana <axel.nana@workbud.com>
- */
-const tenantSchemas: Map<string, PgTable> = new Map();
-
-/**
- * A map of known tenant schemas.
- * @author Axel Nana <axel.nana@workbud.com>
- */
-const schemaRegistry: Map<string, PgSchema> = new Map();
-
-export namespace Tenancy {
-	/**
-	 * Gets the schema for the given tenant.
-	 * @author Axel Nana <axel.nana@workbud.com>
-	 * @param tenant The name of the tenant.
-	 * @returns The tenant schema for the given tenant.
-	 */
-	const getTenantSchema = (tenant: string) => {
-		return schemaRegistry.get(tenant) ?? registerTenant(tenant);
-	};
-
-	/**
-	 * Gets the name of the current tenant.
-	 * @author Axel Nana <axel.nana@workbud.com>
-	 * @returns The name of the current tenant, or `null` if no tenant is set.
-	 */
-	export const getCurrentTenant = (): string | null => {
-		const store = Application.context.getStore();
-		return (store?.get('tenant') ?? null) as string | null;
-	};
-
-	/**
-	 * Sets the current tenant.
-	 * @author Axel Nana <axel.nana@workbud.com>
-	 * @template T The type of the model class to wrap with the tenant.
-	 * @template TColumnsMap The table columns config.
-	 * @param tenant The name of the tenant.
-	 * @param model The model class that wraps the `PgTable`.
-	 * @returns The drizzle's table schema wrapped by the tenant.
-	 */
-	export const wrapTenant = <
-		T extends ModelClass<TTableName, TColumnsMap>,
-		TTableName extends string = T extends ModelClass<infer TTableName, any> ? TTableName : string,
-		TColumnsMap extends Record<string, PgColumnBuilderBase> = T extends ModelClass<
-			TTableName,
-			infer TColumnsMap
-		>
-			? TColumnsMap
-			: Record<string, PgColumnBuilderBase>
-	>(
-		tenant: string,
-		model: T
-	): ReturnType<typeof pgTable<TTableName, TColumnsMap>> => {
-		if (tenant === 'public') {
-			return pgTable(model.tableName, model.columns);
-		}
-
-		const tableName = `${tenant}.${model.tableName}`;
-		if (tenantSchemas.has(tableName)) {
-			return tenantSchemas.get(tableName)! as ReturnType<typeof pgTable<TTableName, TColumnsMap>>;
-		}
-
-		const tenantSchema = getTenantSchema(tenant);
-		const schemaTable = tenantSchema.table(model.tableName, model.columns);
-		tenantSchemas.set(tableName, schemaTable);
-
-		return schemaTable as unknown as ReturnType<typeof pgTable<TTableName, TColumnsMap>>;
-	};
-
-	/**
-	 * Registers a new tenant schema.
-	 * @author Axel Nana <axel.nana@workbud.com>
-	 * @param tenant The name of the tenant.
-	 * @returns A new schema for the given tenant.
-	 */
-	export const registerTenant = (tenant: string) => {
-		if (schemaRegistry.has(tenant)) return schemaRegistry.get(tenant)!;
-
-		const tenantSchema = pgSchema(tenant);
-		schemaRegistry.set(tenant, tenantSchema);
-
-		return tenantSchema;
-	};
-
-	/**
-	 * Runs the given callback in a context with the given tenant.
-	 * @author Axel Nana <axel.nana@workbud.com>
-	 * @param tenant The name of the tenant.
-	 * @param callback The callback to run.
-	 * @returns The result of the callback.
-	 */
-	export const withTenant = <TReturn>(tenant: string, callback: () => TReturn): TReturn => {
-		const currentStore = Application.context.getStore();
-
-		const newStore = new Map(currentStore);
-		newStore.set('tenant', tenant);
-
-		return Application.context.run(newStore, callback);
-	};
-}

@@ -89,11 +89,6 @@ export type AppProps = {
 	modules?: ModuleClass[];
 
 	/**
-	 * The list of CLI commands provided the app.
-	 */
-	commands?: CommandClass[];
-
-	/**
 	 * The database configuration for the app.
 	 */
 	database?: {
@@ -331,8 +326,6 @@ export abstract class Application extends InteractsWithConsole {
 		if (!action) {
 			this.commandDescribe();
 		} else {
-			const { commands } = Reflect.getMetadata(Symbols.app, this.constructor) as AppProps;
-
 			switch (action) {
 				case 'serve': {
 					return this.commandServe();
@@ -344,7 +337,8 @@ export abstract class Application extends InteractsWithConsole {
 					const command = argv[1];
 
 					if (command) {
-						const commandClass = commands?.find((commandClass) => commandClass.command === command);
+						const commands = this.getCommands();
+						const commandClass = commands.find((commandClass) => commandClass.command === command);
 
 						if (commandClass) {
 							const commandInstance = Service.make(commandClass);
@@ -391,10 +385,10 @@ export abstract class Application extends InteractsWithConsole {
 	 * @param argv The command line arguments.
 	 */
 	private async commandExec(command: string, argv: string[]): Promise<void> {
-		const { commands } = Reflect.getMetadata(Symbols.app, this.constructor) as AppProps;
+		const commands = this.getCommands();
 
 		// Find the command class
-		const commandClass = commands?.find((commandClass) => commandClass.command === command);
+		const commandClass = commands.find((commandClass) => commandClass.command === command);
 
 		if (!commandClass) {
 			console.error(`Command ${command} not found`);
@@ -421,6 +415,22 @@ export abstract class Application extends InteractsWithConsole {
 			console.error(error.message);
 			return process.exit(1);
 		}
+	}
+
+	/**
+	 * Discovers all registered commands from the service container.
+	 * Commands are registered via `@Command.register()` and stored with the
+	 * `elysium.command.*` service name pattern.
+	 *
+	 * @returns An array of all discovered command classes, filtered by build mode.
+	 */
+	private getCommands(): CommandClass[] {
+		const commandKeys = Service.keys('elysium.command.*');
+		const commands = commandKeys
+			.map((key) => Service.get<CommandClass>(key))
+			.filter((cmd): cmd is CommandClass => cmd !== null);
+
+		return commands.filter((cmd) => (Bun.env.NODE_ENV === 'production' ? !cmd.dev : true));
 	}
 
 	private async commandWork(argv: string[]) {
@@ -553,11 +563,11 @@ export abstract class Application extends InteractsWithConsole {
 				}
 			})
 			.onStart(async (elysia) => {
-				await this.onStart(elysia);
+				await this.onStart(elysia as unknown as Elysia<Route>);
 				Event.emit('elysium:server:start', elysia, this);
 			})
 			.onStop(async (elysia) => {
-				await this.onStop(elysia);
+				await this.onStop(elysia as unknown as Elysia<Route>);
 				Event.emit('elysium:server:stop', elysia, this);
 				this._appContextStorage.disable();
 			});
@@ -611,9 +621,9 @@ export abstract class Application extends InteractsWithConsole {
 	}
 
 	private commandList() {
-		const { commands } = Reflect.getMetadata(Symbols.app, this.constructor) as AppProps;
+		const commands = this.getCommands();
 
-		const groups = (commands ?? []).reduce((acc, commandClass) => {
+		const groups = commands.reduce((acc, commandClass) => {
 			const groupKey: string = first(commandClass.command.split(':'))!;
 			const group = acc.get(groupKey) ?? [];
 			group.push(commandClass);
