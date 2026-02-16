@@ -689,7 +689,9 @@ export class WorkerPool extends InteractsWithConsole {
 	public async addWorker(queues: string[] = []): Promise<void> {
 		let worker: BunWorker;
 
-		if (ELYSIUM_BUILD) {
+		const isBuild = Bun.main.endsWith('.js');
+
+		if (isBuild) {
 			worker = new BunWorker('./index.js', {
 				argv: ['work', ...queues.map((queue) => `--queue=${queue}`)]
 			});

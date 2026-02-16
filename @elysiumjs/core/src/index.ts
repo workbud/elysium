@@ -14,8 +14,6 @@
 
 import type { SingletonBase } from 'elysia';
 
-import './macros';
-
 export { type Elysia, type TSchema, type Static, t } from 'elysia';
 export { type AppContext, type ElysiumPlugin, Application } from './app';
 export { Cache } from './cache';
