@@ -22,6 +22,7 @@ export interface TransportConfig {
 }
 
 export interface HermesConfig {
+	name?: string;
 	level: LogLevel;
 	format: LogFormat;
 	transports?: TransportConfig[];

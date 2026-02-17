@@ -14,23 +14,26 @@
 
 import type { LoggerInterface } from '@elysiumjs/core';
 import type { Logger as PinoLogger } from 'pino';
-import type { HermesConfig } from './types';
+import type { HermesConfig } from '../types';
 
-import { Service, ServiceScope } from '@elysiumjs/core';
+import { Service } from '@elysiumjs/core';
 import pino from 'pino';
 
-import { DEFAULT_CONFIG } from './types';
+import { DEFAULT_CONFIG } from '../types';
 
 /**
- * Production logger implementation wrapping Pino.
+ * Production-ready logger implementation wrapping Pino.
  * Implements `LoggerInterface` from `@elysiumjs/core`.
  *
  * @author Axel Nana <axel.nana@workbud.com>
  */
-@Service.register({ name: 'logger', scope: ServiceScope.SINGLETON })
 export class HermesLogger implements LoggerInterface {
 	private pino: PinoLogger;
 	private config: HermesConfig;
+
+	public static make(name: string): HermesLogger {
+		return Service.get(HermesLogger)?.child({ name }) ?? new HermesLogger({ name });
+	}
 
 	constructor(config: Partial<HermesConfig> = {}) {
 		this.config = { ...DEFAULT_CONFIG, ...config };
@@ -39,7 +42,8 @@ export class HermesLogger implements LoggerInterface {
 
 	private createPinoInstance(): PinoLogger {
 		const options: pino.LoggerOptions = {
-			level: this.config.level
+			level: this.config.level,
+			name: this.config.name
 		};
 
 		if (this.config.format === 'pretty') {

@@ -11,9 +11,9 @@ bun add @elysiumjs/hermes
 ## Usage
 
 ```ts
-import { LoggerService } from '@elysiumjs/hermes';
+import { HermesLogger } from '@elysiumjs/hermes';
 
-const logger = LoggerService.make('my-logger');
+const logger = HermesLogger.make('my-logger');
 
 logger.info('Hello world!');
 logger.error('Something went wrong!');
