@@ -1,8 +1,8 @@
-import { LoggerService, Service, ServiceScope } from '@elysiumjs/core';
+import { HermesLogger, Service, ServiceScope } from '@elysiumjs/core';
 
 @Service.register({ name: '{alias}', scope: ServiceScope.{scope} })
 export class {name} {
-    private static readonly logger = LoggerService.make({name}.name);
+    private static readonly logger = HermesLogger.make({name}.name);
 
     public constructor() {}
 }
