@@ -20,6 +20,9 @@
 # misc
 **/.DS_Store
 **/*.pem
+.agents
+.claude
+.junie
 
 # debug
 **/npm-debug.log*
@@ -42,6 +45,7 @@
 **/*.log
 **/package-lock.json
 **/*.bun
+**/dist
 
 # Turborepo
 .turbo
