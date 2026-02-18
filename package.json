@@ -27,7 +27,7 @@
 		"format": "bun run --filter='@elysiumjs/*' format",
 		"changeset": "changeset",
 		"version": "changeset version",
-		"release": "bun run build && changeset publish"
+		"release": "bun run build && NPM_CONFIG_IGNORE_SCRIPTS=1 changeset publish"
 	},
 	"devDependencies": {
 		"@changesets/cli": "^2.27.0",
