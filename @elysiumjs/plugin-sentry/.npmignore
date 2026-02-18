@@ -3,6 +3,7 @@ coverage
 tests
 node_modules
 .yalc
+.turbo
 
 .gitignore
 .prettierignore

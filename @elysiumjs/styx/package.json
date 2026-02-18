@@ -1,49 +1,49 @@
 {
-	"name": "@elysiumjs/styx",
-	"version": "0.7.0",
-	"license": "Apache-2.0",
-	"description": "The CLI tool for the Elysium.js framework.",
-	"private": false,
-	"author": "Workbud Technologies Inc.",
-	"repository": {
-		"type": "git",
-		"url": "https://github.com/workbud/elysium"
-	},
-	"homepage": "https://github.com/workbud/elysium",
-	"scripts": {
-		"format": "prettier --write \"./src/**/*.ts\"",
-		"clean": "rimraf dist",
-		"build:js": "bun build ./src/styx.ts ./src/index.ts --outdir ./dist --target bun -e @elysiumjs/* -e reflect-metadata --root ./src --minify",
-		"build:ts": "tsc",
-		"build": "bun run clean && bun run build:js && bun run build:ts",
-		"typecheck": "tsc --noEmit",
-		"prepublishOnly": "bun run build"
-	},
-	"keywords": [
-		"elysium",
-		"framework",
-		"web",
-		"api",
-		"typescript",
-		"cli"
-	],
-	"type": "module",
-	"bin": {
-		"styx": "dist/styx.js"
-	},
-	"module": "dist/index.js",
-	"types": "dist/index.d.ts",
-	"devDependencies": {
-		"@elysiumjs/core": "workspace:*",
-		"@elysiumjs/heracles": "workspace:*",
-		"@types/prompts": "^2.4.9",
-		"@types/string-template": "^1.0.7",
-		"prompts": "^2.4.2",
-		"radash": "catalog:",
-		"string-template": "^1.0.0"
-	},
-	"peerDependencies": {
-		"@elysiumjs/core": "workspace:^",
-		"@elysiumjs/heracles": "workspace:^"
-	}
+  "name": "@elysiumjs/styx",
+  "version": "0.7.1",
+  "license": "Apache-2.0",
+  "description": "The CLI tool for the Elysium.js framework.",
+  "private": false,
+  "author": "Workbud Technologies Inc.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/workbud/elysium"
+  },
+  "homepage": "https://github.com/workbud/elysium",
+  "scripts": {
+    "format": "prettier --write \"./src/**/*.ts\"",
+    "clean": "rimraf dist",
+    "build:js": "bun build ./src/styx.ts ./src/index.ts --outdir ./dist --target bun -e @elysiumjs/* -e reflect-metadata --root ./src --minify",
+    "build:ts": "tsc",
+    "build": "bun run clean && bun run build:js && bun run build:ts",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "elysium",
+    "framework",
+    "web",
+    "api",
+    "typescript",
+    "cli"
+  ],
+  "type": "module",
+  "bin": {
+    "styx": "dist/styx.js"
+  },
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "devDependencies": {
+    "@elysiumjs/core": "workspace:*",
+    "@elysiumjs/heracles": "workspace:*",
+    "@types/prompts": "^2.4.9",
+    "@types/string-template": "^1.0.7",
+    "prompts": "^2.4.2",
+    "radash": "catalog:",
+    "string-template": "^1.0.0"
+  },
+  "peerDependencies": {
+    "@elysiumjs/core": "workspace:^",
+    "@elysiumjs/heracles": "workspace:^"
+  }
 }

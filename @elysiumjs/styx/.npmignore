@@ -5,6 +5,7 @@ node_modules
 src
 tests
 
+.turbo
 .gitignore
 .prettierignore
 .prettierrc

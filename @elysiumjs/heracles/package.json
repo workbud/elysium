@@ -1,46 +1,48 @@
 {
-	"name": "@elysiumjs/heracles",
-	"version": "0.6.0",
-	"description": "Background job processing system for Elysium.js apps.",
-	"module": "dist/index.js",
-	"type": "module",
-	"types": "dist/index.d.ts",
-	"sideEffects": ["./src/index.ts"],
-	"scripts": {
-		"test": "bun test",
-		"dev": "bun --watch src/index.ts",
-		"format": "prettier --write 'src/**/*.{ts,tsx}'",
-		"clean": "rimraf dist",
-		"build:js": "bun build ./src/index.ts --outdir ./dist --target bun --packages external --root ./src --minify",
-		"build:ts": "tsc",
-		"build": "bun run clean && bun run build:js && bun run build:ts",
-		"typecheck": "tsc --noEmit",
-		"prepublishOnly": "bun run build",
-		"example:optimized": "bun run examples/optimized_example.ts",
-		"example:worker": "bun run examples/redis_worker_example.ts",
-		"example:comprehensive": "bun run examples/heracles_comprehensive.ts"
-	},
-	"keywords": [
-		"elysium",
-		"job",
-		"queue",
-		"worker",
-		"scheduler",
-		"background",
-		"processing",
-		"heracles"
-	],
-	"author": "Workbud Technologies Inc.",
-	"license": "Apache-2.0",
-	"dependencies": {
-		"commander": "^14.0.1",
-		"radash": "catalog:",
-		"reflect-metadata": "catalog:"
-	},
-	"devDependencies": {
-		"@elysiumjs/core": "workspace:*"
-	},
-	"peerDependencies": {
-		"@elysiumjs/core": "workspace:^"
-	}
+  "name": "@elysiumjs/heracles",
+  "version": "0.6.1",
+  "description": "Background job processing system for Elysium.js apps.",
+  "module": "dist/index.js",
+  "type": "module",
+  "types": "dist/index.d.ts",
+  "sideEffects": [
+    "./src/index.ts"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "dev": "bun --watch src/index.ts",
+    "format": "prettier --write 'src/**/*.{ts,tsx}'",
+    "clean": "rimraf dist",
+    "build:js": "bun build ./src/index.ts --outdir ./dist --target bun --packages external --root ./src --minify",
+    "build:ts": "tsc",
+    "build": "bun run clean && bun run build:js && bun run build:ts",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build",
+    "example:optimized": "bun run examples/optimized_example.ts",
+    "example:worker": "bun run examples/redis_worker_example.ts",
+    "example:comprehensive": "bun run examples/heracles_comprehensive.ts"
+  },
+  "keywords": [
+    "elysium",
+    "job",
+    "queue",
+    "worker",
+    "scheduler",
+    "background",
+    "processing",
+    "heracles"
+  ],
+  "author": "Workbud Technologies Inc.",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "commander": "^14.0.1",
+    "radash": "catalog:",
+    "reflect-metadata": "catalog:"
+  },
+  "devDependencies": {
+    "@elysiumjs/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@elysiumjs/core": "workspace:^"
+  }
 }

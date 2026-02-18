@@ -1,12 +1,3 @@
-import type { JobStatusInfo, Transport, TransportEvent } from '../transport';
-
-import { InteractsWithConsole, Redis } from '@elysiumjs/core';
-import { RedisClient } from 'bun';
-import { uid } from 'radash';
-
-import { JobStatus } from '../job';
-import { TransportMode } from '../transport';
-
 // Copyright (c) 2025-present Workbud Technologies Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +11,15 @@ import { TransportMode } from '../transport';
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+import type { JobStatusInfo, Transport, TransportEvent } from '../transport';
+
+import { InteractsWithConsole, Redis } from '@elysiumjs/core';
+import { RedisClient } from 'bun';
+import { uid } from 'radash';
+
+import { JobStatus } from '../job';
+import { TransportMode } from '../transport';
 
 /**
  * Redis transport configuration options
@@ -798,7 +798,7 @@ export class RedisTransport extends InteractsWithConsole implements Transport {
 						queue,
 						status,
 						priority: 10,
-						timestamp: parseInt(score, 10)
+						timestamp: score
 					};
 				}
 			}
