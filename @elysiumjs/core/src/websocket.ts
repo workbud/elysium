@@ -27,7 +27,7 @@ import { nextTick, Symbols } from './utils';
  * Properties required when declaring a websocket controller using the `@websocket()` decorator.
  * @author Axel Nana <axel.nana@workbud.com>
  */
-export type WebsocketProps = {
+export type WebsocketProps<TWebsocketData = any> = {
 	/**
 	 * The path of the websocket route.
 	 */
@@ -36,7 +36,7 @@ export type WebsocketProps = {
 	/**
 	 * The options for the websocket server.
 	 */
-	options?: ConditionalPick<Bun.WebSocketHandler, Primitive | JsonObject>;
+	options?: ConditionalPick<Bun.WebSocketHandler<TWebsocketData>, Primitive | JsonObject>;
 };
 
 /**

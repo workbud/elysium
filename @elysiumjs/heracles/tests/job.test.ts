@@ -342,18 +342,18 @@ describe('WithId mixin', () => {
 
 describe('JobStatus enum', () => {
 	it('should have all expected statuses', () => {
-		expect(JobStatus.PENDING).toBe('pending');
-		expect(JobStatus.RUNNING).toBe('running');
-		expect(JobStatus.COMPLETED).toBe('completed');
-		expect(JobStatus.FAILED).toBe('failed');
-		expect(JobStatus.CANCELLED).toBe('cancelled');
-		expect(JobStatus.SCHEDULED_FOR_RETRY).toBe('scheduled_for_retry');
+		expect(JobStatus.PENDING).toBe('pending' as JobStatus);
+		expect(JobStatus.RUNNING).toBe('running' as JobStatus);
+		expect(JobStatus.COMPLETED).toBe('completed' as JobStatus);
+		expect(JobStatus.FAILED).toBe('failed' as JobStatus);
+		expect(JobStatus.CANCELLED).toBe('cancelled' as JobStatus);
+		expect(JobStatus.SCHEDULED_FOR_RETRY).toBe('scheduled_for_retry' as JobStatus);
 	});
 });
 
 describe('JobOverlapBehavior enum', () => {
 	it('should have expected values', () => {
-		expect(JobOverlapBehavior.ALLOW_OVERLAP).toBe('allow_overlap');
-		expect(JobOverlapBehavior.NO_OVERLAP).toBe('no_overlap');
+		expect(JobOverlapBehavior.ALLOW_OVERLAP).toBe('allow_overlap' as JobOverlapBehavior);
+		expect(JobOverlapBehavior.NO_OVERLAP).toBe('no_overlap' as JobOverlapBehavior);
 	});
 });

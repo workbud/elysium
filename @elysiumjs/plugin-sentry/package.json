@@ -1,48 +1,48 @@
 {
-	"name": "@elysiumjs/plugin-sentry",
-	"version": "0.1.1",
-	"license": "Apache-2.0",
-	"description": "Sentry error reporting plugin for the Elysium.js framework.",
-	"private": false,
-	"author": {
-		"name": "Axel Nana",
-		"email": "axel.nana@workbud.com"
-	},
-	"repository": {
-		"type": "git",
-		"url": "https://github.com/workbud/elysium"
-	},
-	"homepage": "https://github.com/workbud/elysium",
-	"scripts": {
-		"format": "prettier --write \"./src/**/*.ts\"",
-		"clean": "rimraf dist",
-		"build:js": "bun build ./src/index.ts --outdir ./dist --target bun --packages external --root ./src --minify",
-		"build:ts": "tsc",
-		"build": "bun run clean && bun run build:js && bun run build:ts",
-		"typecheck": "tsc --noEmit",
-		"prepublishOnly": "bun run build"
-	},
-	"keywords": [
-		"elysium",
-		"framework",
-		"web",
-		"api",
-		"typescript",
-		"sentry",
-		"error",
-		"reporting"
-	],
-	"type": "module",
-	"module": "dist/index.js",
-	"types": "dist/index.d.ts",
-	"devDependencies": {
-		"@elysiumjs/core": "workspace:*"
-	},
-	"peerDependencies": {
-		"@elysiumjs/core": "workspace:^"
-	},
-	"dependencies": {
-		"@elysiajs/opentelemetry": "^1.4.0",
-		"@sentry/bun": "^10.17.0"
-	}
+  "name": "@elysiumjs/plugin-sentry",
+  "version": "0.1.2",
+  "license": "Apache-2.0",
+  "description": "Sentry error reporting plugin for the Elysium.js framework.",
+  "private": false,
+  "author": {
+    "name": "Axel Nana",
+    "email": "axel.nana@workbud.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/workbud/elysium"
+  },
+  "homepage": "https://github.com/workbud/elysium",
+  "scripts": {
+    "format": "prettier --write \"./src/**/*.ts\"",
+    "clean": "rimraf dist",
+    "build:js": "bun build ./src/index.ts --outdir ./dist --target bun --packages external --root ./src --minify",
+    "build:ts": "tsc",
+    "build": "bun run clean && bun run build:js && bun run build:ts",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "elysium",
+    "framework",
+    "web",
+    "api",
+    "typescript",
+    "sentry",
+    "error",
+    "reporting"
+  ],
+  "type": "module",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "devDependencies": {
+    "@elysiumjs/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@elysiumjs/core": "workspace:^"
+  },
+  "dependencies": {
+    "@elysiajs/opentelemetry": "^1.4.0",
+    "@sentry/bun": "^10.17.0"
+  }
 }

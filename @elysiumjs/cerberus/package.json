@@ -1,46 +1,46 @@
 {
-	"name": "@elysiumjs/cerberus",
-	"version": "0.2.1",
-	"license": "Apache-2.0",
-	"description": "Ability-based roles and permissions layer for Elysium.js apps.",
-	"private": false,
-	"author": "Workbud Technologies Inc.",
-	"repository": {
-		"type": "git",
-		"url": "https://github.com/workbud/elysium"
-	},
-	"homepage": "https://github.com/workbud/elysium",
-	"scripts": {
-		"format": "prettier --write \"./src/**/*.ts\"",
-		"clean": "rimraf dist",
-		"build:js": "bun build ./src/index.ts --outdir ./dist --target bun --packages external --root ./src --minify",
-		"build:ts": "tsc",
-		"build": "bun run clean && bun run build:js && bun run build:ts",
-		"test": "bun test",
-		"test:coverage": "bun test --coverage",
-		"typecheck": "tsc --noEmit",
-		"prepublishOnly": "bun run build"
-	},
-	"keywords": [
-		"elysium",
-		"framework",
-		"web",
-		"api",
-		"typescript",
-		"authorization",
-		"role-based",
-		"permissions"
-	],
-	"module": "dist/index.js",
-	"type": "module",
-	"types": "dist/index.d.ts",
-	"dependencies": {
-		"@casl/ability": "^6.7.3"
-	},
-	"devDependencies": {
-		"@elysiumjs/core": "workspace:*"
-	},
-	"peerDependencies": {
-		"@elysiumjs/core": "workspace:^"
-	}
+  "name": "@elysiumjs/cerberus",
+  "version": "0.2.2",
+  "license": "Apache-2.0",
+  "description": "Ability-based roles and permissions layer for Elysium.js apps.",
+  "private": false,
+  "author": "Workbud Technologies Inc.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/workbud/elysium"
+  },
+  "homepage": "https://github.com/workbud/elysium",
+  "scripts": {
+    "format": "prettier --write \"./src/**/*.ts\"",
+    "clean": "rimraf dist",
+    "build:js": "bun build ./src/index.ts --outdir ./dist --target bun --packages external --root ./src --minify",
+    "build:ts": "tsc",
+    "build": "bun run clean && bun run build:js && bun run build:ts",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "elysium",
+    "framework",
+    "web",
+    "api",
+    "typescript",
+    "authorization",
+    "role-based",
+    "permissions"
+  ],
+  "module": "dist/index.js",
+  "type": "module",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@casl/ability": "^6.7.3"
+  },
+  "devDependencies": {
+    "@elysiumjs/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@elysiumjs/core": "workspace:^"
+  }
 }

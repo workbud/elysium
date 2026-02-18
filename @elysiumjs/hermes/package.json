@@ -1,29 +1,31 @@
 {
-	"name": "@elysiumjs/hermes",
-	"version": "0.3.0",
-	"type": "module",
-	"module": "dist/index.js",
-	"types": "dist/index.d.ts",
-	"sideEffects": ["./src/index.ts"],
-	"scripts": {
-		"format": "prettier --write \"./src/**/*.ts\"",
-		"clean": "rimraf dist",
-		"build:js": "bun build ./src/index.ts --outdir ./dist --target bun --packages external --root ./src --minify",
-		"build:ts": "tsc",
-		"build": "bun run clean && bun run build:js && bun run build:ts",
-		"test": "bun test",
-		"test:coverage": "bun test --coverage",
-		"typecheck": "tsc --noEmit",
-		"prepublishOnly": "bun run build"
-	},
-	"dependencies": {
-		"pino": "^10.0.0",
-		"pino-pretty": "^13.0.0"
-	},
-	"devDependencies": {
-		"@elysiumjs/core": "workspace:*"
-	},
-	"peerDependencies": {
-		"@elysiumjs/core": "workspace:^"
-	}
+  "name": "@elysiumjs/hermes",
+  "version": "0.3.1",
+  "type": "module",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "sideEffects": [
+    "./src/index.ts"
+  ],
+  "scripts": {
+    "format": "prettier --write \"./src/**/*.ts\"",
+    "clean": "rimraf dist",
+    "build:js": "bun build ./src/index.ts --outdir ./dist --target bun --packages external --root ./src --minify",
+    "build:ts": "tsc",
+    "build": "bun run clean && bun run build:js && bun run build:ts",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build"
+  },
+  "dependencies": {
+    "pino": "^10.0.0",
+    "pino-pretty": "^13.0.0"
+  },
+  "devDependencies": {
+    "@elysiumjs/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@elysiumjs/core": "workspace:^"
+  }
 }
