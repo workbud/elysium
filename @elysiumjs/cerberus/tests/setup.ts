@@ -22,31 +22,3 @@ mock.module('node:async_hooks', () => ({
 		public disable = mock();
 	}
 }));
-
-import { Job } from '../src/job';
-
-/**
- * Helper to create a test job class that records execution.
- */
-export function makeTestJobClass(
-	name: string,
-	delayMs: number,
-	outputRef: { input?: string; output?: string }
-) {
-	@Job.register({ name })
-	class TestJob extends Job {
-		static displayName = name;
-
-		public constructor(input: string) {
-			super();
-			outputRef.input = input;
-		}
-
-		protected async execute(): Promise<void> {
-			await Bun.sleep(delayMs);
-			outputRef.output = `${name}-done-${this.id}`;
-		}
-	}
-	Object.defineProperty(TestJob, 'name', { value: name });
-	return TestJob;
-}

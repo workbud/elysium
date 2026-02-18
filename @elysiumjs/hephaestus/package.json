@@ -30,6 +30,8 @@
 		"build:js": "bun build ./src/index.ts --outdir ./dist --target bun -e zod -e @elysiumjs/core --root ./src --minify",
 		"build:ts": "tsc",
 		"build": "bun run clean && bun run build:js && bun run build:ts",
+		"test": "bun test",
+		"test:coverage": "bun test --coverage",
 		"typecheck": "tsc --noEmit",
 		"prepublishOnly": "bun run build"
 	},

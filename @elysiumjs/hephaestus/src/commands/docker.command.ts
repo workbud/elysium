@@ -24,8 +24,7 @@ import { DockerGenerator } from './docker.generator';
 @Command.register()
 export class HephaestusDockerCommand extends Command {
 	public static readonly command: string = 'hephaestus:docker';
-	public static readonly description: string =
-		'Generate a Dockerfile for the compiled binary.';
+	public static readonly description: string = 'Generate a Dockerfile for the compiled binary.';
 	public static override readonly dev: boolean = true;
 
 	@Command.arg({
