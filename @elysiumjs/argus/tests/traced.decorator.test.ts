@@ -30,7 +30,7 @@ describe('@Traced decorator', () => {
 		};
 
 		mockTracer = {
-			startActiveSpan: mock(async (name: string, options: any, fn: any) => {
+			startActiveSpan: mock(async (_name: string, _options: any, fn: any) => {
 				return fn(mockSpan);
 			})
 		};

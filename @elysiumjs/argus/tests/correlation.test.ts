@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { trace } from '@opentelemetry/api';
-import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import { afterEach, describe, expect, it, spyOn } from 'bun:test';
 
 import { withTraceContext } from '../src/correlation';
 

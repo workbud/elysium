@@ -43,17 +43,17 @@ describe('@Logged decorator', () => {
 	});
 
 	it('should log args when includeArgs is true', async () => {
-		const debugMock = mock(() => {});
-		const errorMock = mock(() => {});
+		const debugMock = mock((_msg: string, _ctx?: Record<string, unknown>) => {});
+		const errorMock = mock((_msg: string, _ctx?: Record<string, unknown>) => {});
 
 		class MyService {
 			logger = {
-				trace: mock(() => {}),
+				trace: mock((_msg: string, _ctx?: Record<string, unknown>) => {}),
 				debug: debugMock,
-				info: mock(() => {}),
-				warn: mock(() => {}),
+				info: mock((_msg: string, _ctx?: Record<string, unknown>) => {}),
+				warn: mock((_msg: string, _ctx?: Record<string, unknown>) => {}),
 				error: errorMock,
-				fatal: mock(() => {})
+				fatal: mock((_msg: string, _ctx?: Record<string, unknown>) => {})
 			};
 
 			@Logged({ includeArgs: true })
@@ -73,7 +73,7 @@ describe('@Logged decorator', () => {
 	});
 
 	it('should log result when includeResult is true', async () => {
-		const debugMock = mock(() => {});
+		const debugMock = mock((_msg: string, _ctx: Record<string, unknown>) => {});
 
 		class MyService {
 			logger = {
@@ -103,7 +103,7 @@ describe('@Logged decorator', () => {
 	});
 
 	it('should log timing when includeTiming is true', async () => {
-		const debugMock = mock(() => {});
+		const debugMock = mock((_msg: string, _ctx: Record<string, unknown>) => {});
 
 		class MyService {
 			logger = {
@@ -160,7 +160,7 @@ describe('@Logged decorator', () => {
 	});
 
 	it('should log errors with duration', async () => {
-		const errorMock = mock(() => {});
+		const errorMock = mock((_msg: string, _ctx: Record<string, unknown>) => {});
 
 		class MyService {
 			logger = {
@@ -193,7 +193,7 @@ describe('@Logged decorator', () => {
 	});
 
 	it('should handle non-Error throws', async () => {
-		const errorMock = mock(() => {});
+		const errorMock = mock((_msg: string, _ctx: Record<string, unknown>) => {});
 
 		class MyService {
 			logger = {

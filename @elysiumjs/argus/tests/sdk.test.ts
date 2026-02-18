@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 
 import { ArgusSDK } from '../src/sdk';
 
@@ -55,9 +55,7 @@ describe('ArgusSDK', () => {
 				exporter: 'console'
 			});
 
-			expect(errorSpy).toHaveBeenCalledWith(
-				expect.stringContaining('already initialized')
-			);
+			expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('already initialized'));
 
 			errorSpy.mockRestore();
 		});
