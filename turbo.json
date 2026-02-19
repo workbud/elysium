@@ -6,7 +6,7 @@
 		"build": {
 			"dependsOn": ["^build"],
 			"inputs": ["src/**/*.ts", "tsconfig.json", "package.json"],
-			"outputs": ["dist/**"],
+			"outputs": ["dist/**", "index.js"],
 			"outputLogs": "new-only"
 		},
 		"build:js": {

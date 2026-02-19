@@ -150,6 +150,7 @@
         "create-elysium": "./index.js",
       },
       "dependencies": {
+        "@elysiumjs/core": "workspace:*",
         "prompts": "^2.4.2",
         "radash": "catalog:",
       },

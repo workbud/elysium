@@ -26,9 +26,11 @@ export const getAppCode = (
 	projectName: string,
 	modules: Record<string, string>,
 	plugins: { name: string; alias: string }[] = []
-) => /* js */ `import type { Elysia, Route } from '@elysiumjs/core';
+) => /* js */ `import type { Route } from '@elysiumjs/core';
+import type { Elysia, ErrorContext } from 'elysia';
 
-import { Application, t, WorkerPool } from '@elysiumjs/core';
+import { Application, Service, t, WorkerPool } from '@elysiumjs/core';
+import { HermesLogger } from '@elysiumjs/hermes';
 ${plugins.map((plugin) => `import { plugin as ${plugin.alias} } from '${plugin.name}';`).join('\n')}
 
 ${Object.keys(modules)
@@ -41,7 +43,6 @@ export const env = t.Object({});
 	modules: [${Object.keys(modules)
 		.map((module) => `${pascal(module)}Module`)
 		.join(', ')}],
-	commands: [],
 	server: {
 		name: '${projectName}',
 		port: parseInt(process.env.PORT!, 10) || 3000
@@ -69,15 +70,24 @@ export const env = t.Object({});
 			}
 		}
 	},
+	'elysium:hermes': {
+		level: 'debug',
+		format: 'pretty'
+	},
 	env,
 	plugins: [
 		${plugins.map((plugin) => `${plugin.alias}()`).join(',\n\t\t')}
 	]
 })
 export class App extends Application {
-	protected async onStart(e: Elysia<Route>) {
+	protected override async onStart(e: Elysia<Route>) {
 		await super.onStart(e);
 		await WorkerPool.instance.init();
+	}
+
+	protected onError(e: ErrorContext): Promise<boolean> {
+		Service.get(HermesLogger)?.error(e.error.message, e.error);
+		return super.onError(e);
 	}
 }
 `;
