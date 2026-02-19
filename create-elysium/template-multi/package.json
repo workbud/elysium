@@ -17,7 +17,7 @@
 	},
 	"dependencies": {
 		"@elysiumjs/core": "latest",
-		"@elysiumjs/styx": "latest",
-		"reflect-metadata": "^0.2.2"
+		"@elysiumjs/hermes": "latest",
+		"@elysiumjs/styx": "latest"
 	}
 }

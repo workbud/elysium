@@ -1,0 +1,8 @@
+{
+	"packages": {
+		"dev": [
+			"@elysiumjs/hephaestus@latest"
+		]
+	},
+	"sideEffectImport": "@elysiumjs/hephaestus"
+}
