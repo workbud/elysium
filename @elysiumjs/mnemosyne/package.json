@@ -1,0 +1,38 @@
+{
+	"name": "@elysiumjs/mnemosyne",
+	"version": "0.1.0",
+	"license": "Apache-2.0",
+	"description": "Database and caching for Elysium.js applications",
+	"private": false,
+	"author": "Workbud Technologies Inc.",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/workbud/elysium"
+	},
+	"homepage": "https://github.com/workbud/elysium",
+	"scripts": {
+		"format": "prettier --write \"./src/**/*.ts\"",
+		"clean": "rimraf dist",
+		"build:js": "bun build ./src/index.ts --outdir ./dist --target bun --packages external --root ./src --minify",
+		"build:ts": "tsc",
+		"build": "bun run clean && bun run build:js && bun run build:ts",
+		"typecheck": "tsc --noEmit",
+		"prepublishOnly": "bun run build"
+	},
+	"keywords": ["elysium", "database", "cache", "orm", "drizzle"],
+	"module": "dist/index.js",
+	"type": "module",
+	"types": "dist/index.d.ts",
+	"sideEffects": ["./src/index.ts"],
+	"peerDependencies": {
+		"@elysiumjs/core": "^0.7.0"
+	},
+	"dependencies": {
+		"cache-manager": "^7.2.3",
+		"cacheable": "^2.0.3",
+		"drizzle-orm": "^0.44.6",
+		"keyv": "^5.0.0",
+		"radash": "catalog:",
+		"reflect-metadata": "catalog:"
+	}
+}
