@@ -15,7 +15,6 @@
 import type { ElysiaSwaggerConfig } from '@elysiajs/swagger';
 import type { AnyElysia, ElysiaConfig, ErrorContext, TSchema } from 'elysia';
 import type { CommandClass } from './command';
-import type { DatabaseConnectionProps } from './database';
 import type { Route } from './http';
 import type { ModuleClass } from './module';
 import type { RedisConnectionProps } from './redis';
@@ -30,7 +29,6 @@ import { Elysia } from 'elysia';
 import { first } from 'radash';
 
 import { ConsoleFormat, InteractsWithConsole } from './console';
-import { Database } from './database';
 import { initEnv } from './env';
 import { Event } from './event';
 import { applyMiddlewares } from './middleware';
@@ -87,21 +85,6 @@ export type AppProps = {
 	 * The list of modules provided the app.
 	 */
 	modules?: ModuleClass[];
-
-	/**
-	 * The database configuration for the app.
-	 */
-	database?: {
-		/**
-		 * The default connection name.
-		 */
-		default: string;
-
-		/**
-		 * The list of connections.
-		 */
-		connections: Record<string, DatabaseConnectionProps>;
-	};
 
 	/**
 	 * The redis configuration for the app.
@@ -230,7 +213,7 @@ export abstract class Application extends InteractsWithConsole {
 
 		Service.instance('elysium.app', this);
 
-		const { database, redis, wamp } = Reflect.getMetadata(
+		const { redis, wamp } = Reflect.getMetadata(
 			Symbols.app,
 			this.constructor
 		) as AppProps;
@@ -242,16 +225,6 @@ export abstract class Application extends InteractsWithConsole {
 
 			if (Redis.connectionExists(redis.default)) {
 				Redis.setDefaultConnection(redis.default);
-			}
-		}
-
-		if (database) {
-			for (const connectionName in database.connections) {
-				Database.registerConnection(connectionName, database.connections[connectionName]);
-			}
-
-			if (Database.connectionExists(database.default)) {
-				Database.setDefaultConnection(database.default);
 			}
 		}
 
