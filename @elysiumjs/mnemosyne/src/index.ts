@@ -19,3 +19,5 @@ export { Cache } from './cache';
 export type { CacheInterface } from './cache';
 export { createSchemaFromDrizzle, Model } from './model';
 export type { ModelClass } from './model';
+export { Repository } from './repository';
+export type { IdType, RepositoryInterface, RepositoryClass } from './repository';
