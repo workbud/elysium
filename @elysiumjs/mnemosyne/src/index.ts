@@ -12,5 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Placeholder - exports will be added as files are migrated
-export {};
+export { Database, DatabaseCache } from './database';
+export type { DatabaseConnectionProps, DatabaseConnection } from './database';
