@@ -21,3 +21,6 @@ export { createSchemaFromDrizzle, Model } from './model';
 export type { ModelClass } from './model';
 export { Repository } from './repository';
 export type { IdType, RepositoryInterface, RepositoryClass } from './repository';
+export * as Tenancy from './tenancy';
+export { TenantMiddleware, SimpleTenantMiddleware, StrictTenantMiddleware } from './tenancy';
+export type { TenancyConfig, TenancyMode, ModelTenancyConfig } from './tenancy';
