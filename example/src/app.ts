@@ -1,18 +1,19 @@
 import type { Route } from '@elysiumjs/core';
-import type { Elysia } from 'elysia';
+import type { Elysia, ErrorContext } from 'elysia';
 
-import { Application, Middleware, WorkerPool } from '@elysiumjs/core';
+import '#hero/commands/progress-demo.command';
+import '#hero/commands/spinner-demo.command';
+import '#hero/commands/test.command';
 
-import { ProgressDemoCommand } from '#root/commands/progress-demo.command';
-import { SpinnerDemoCommand } from '#root/commands/spinner-demo.command';
-import { TestCommand } from '#root/commands/test.command';
-import { MainModule } from '#root/main.module';
-import { XServerMiddleware } from '#root/middlewares/x-server.middleware';
+import { Application, Middleware, Service, WorkerPool } from '@elysiumjs/core';
+import { HermesLogger } from '@elysiumjs/hermes';
+
+import { MainModule } from '#hero/hero.module';
+import { XServerMiddleware } from '#hero/middlewares/x-server.middleware';
 
 @Middleware.register(XServerMiddleware)
 @Application.register({
 	modules: [MainModule],
-	commands: [TestCommand, SpinnerDemoCommand, ProgressDemoCommand],
 	server: {
 		name: App.name,
 		port: parseInt(process.env.PORT!, 10) || 3000
@@ -30,6 +31,12 @@ import { XServerMiddleware } from '#root/middlewares/x-server.middleware';
 			cache: { url: process.env.REDIS_URL! }
 		}
 	},
+	wamp: {
+		default: 'main',
+		connections: {
+			main: { url: process.env.WAMP_URL!, realm: 'realm1' }
+		}
+	},
 	swagger: {
 		path: '/docs',
 		documentation: {
@@ -39,13 +46,22 @@ import { XServerMiddleware } from '#root/middlewares/x-server.middleware';
 				version: '1.0.0'
 			}
 		}
+	},
+	'elysium:hermes': {
+		level: 'debug',
+		format: 'pretty'
 	}
 })
 export class App extends Application {
-	protected async onStart(e: Elysia<Route>) {
+	protected override async onStart(e: Elysia<Route>) {
 		await super.onStart(e);
 		await WorkerPool.instance.init();
 		WorkerPool.instance.addWorker(['email']);
 		WorkerPool.instance.addWorker(['email', 'sync']);
+	}
+
+	protected onError(e: ErrorContext): Promise<boolean> {
+		Service.get(HermesLogger)?.error(e.error.message, e.error);
+		return super.onError(e);
 	}
 }

@@ -4,6 +4,7 @@ import { Command, CommandArgumentType } from '@elysiumjs/core';
  * A command that demonstrates the use of the spinner for indeterminate operations.
  * @author Axel Nana <axel.nana@workbud.com>
  */
+@Command.register()
 export class SpinnerDemoCommand extends Command {
 	public static readonly command: string = 'demo:spinner';
 	public static readonly description: string =

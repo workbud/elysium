@@ -1,28 +1,28 @@
 import type { WS, WSError } from '@elysiumjs/core';
-import type { UserInsert } from '#root/models/user.model';
+import type { UserInsert } from '#hero/models/user.model';
 
 import { Service, Websocket } from '@elysiumjs/core';
+import { HermesLogger } from '@elysiumjs/hermes';
 
-import { UserModel } from '#root/models/user.model';
-import { LoggerService } from '#root/services/logger.service';
+import { UserModel } from '#hero/models/user.model';
 
 @Websocket.controller({ path: '/chat', options: { idleTimeout: 10 } })
 export class ChatServerController {
-	public constructor(@Service.inject() public logger: LoggerService) {}
+	public constructor(@Service.inject() public logger: HermesLogger) {}
 
 	@Websocket.onOpen()
 	private onOpen() {
-		this.logger.log('websocket opened');
+		this.logger.info('websocket opened');
 	}
 
 	@Websocket.onClose()
 	private onClose() {
-		this.logger.log('websocket closed');
+		this.logger.info('websocket closed');
 	}
 
-	@Websocket.onMessage(UserModel.createSchema)
+	@Websocket.onMessage(UserModel.insertSchema)
 	private onMessage(ws: WS, data: UserInsert) {
-		this.logger.log(`received message: ${JSON.stringify(data)} from ${ws.data.id}`);
+		this.logger.info(`received message: ${JSON.stringify(data)} from ${ws.data.id}`);
 		ws.send(JSON.stringify({ message: `Created user ${data.name}` }));
 		throw new Error('Test websocket error');
 	}

@@ -1,12 +1,11 @@
 import type { WampRegistrationHandlerArgs } from '@elysiumjs/core';
 
 import { Service, Wamp } from '@elysiumjs/core';
+import { HermesLogger } from '@elysiumjs/hermes';
 
-import { LoggerService } from '#root/services/logger.service';
-
-@Wamp.controller({ url: 'ws://127.0.0.1:8888', realm: 'realm1' })
+@Wamp.controller({ connection: 'default' })
 export class TestController {
-	public constructor(@Service.inject() public logger: LoggerService) {}
+	public constructor(@Service.inject() public logger: HermesLogger) {}
 
 	@Wamp.register('test.topic.ext')
 	private onTestTopic(data: WampRegistrationHandlerArgs) {
@@ -21,30 +20,5 @@ export class TestController {
 	@Wamp.subscribe('test.topic.notify')
 	private onTestTopicNotify(data: WampRegistrationHandlerArgs) {
 		console.log('Received data: ', data);
-	}
-
-	@Wamp.onOpen()
-	private onOpen() {
-		this.logger.log('Wamp connection opened');
-	}
-
-	@Wamp.onClose()
-	private onClose() {
-		this.logger.log('Wamp connection closed');
-	}
-
-	@Wamp.onError()
-	private onError() {
-		this.logger.error('Wamp connection error');
-	}
-
-	@Wamp.onReconnect()
-	private onReconnect() {
-		this.logger.log('Wamp reconnecting');
-	}
-
-	@Wamp.onReconnectSuccess()
-	private onReconnectSuccess() {
-		this.logger.log('Wamp reconnected');
 	}
 }

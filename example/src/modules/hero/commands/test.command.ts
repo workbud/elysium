@@ -1,7 +1,8 @@
-import type { UserService } from '#root/services/user.service';
+import type { UserService } from '#hero/services/user.service';
 
 import { Command, Service } from '@elysiumjs/core';
 
+@Command.register()
 export class TestCommand extends Command {
 	public static readonly command = 'app:test';
 	public static readonly description = 'Test command';

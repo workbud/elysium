@@ -1,17 +1,17 @@
 import type { Context, EventData } from '@elysiumjs/core';
-import type { User, UserInsert } from '#root/models/user.model';
+import type { MainModule } from '#hero/hero.module';
+import type { User, UserInsert } from '#hero/models/user.model';
 import type { Class } from 'type-fest';
-import type { MainModule } from '../../main.module';
 
 import { Cache, Event, Http, HttpControllerScope, Service, WorkerPool } from '@elysiumjs/core';
+import { HermesLogger } from '@elysiumjs/hermes';
 import { t } from 'elysia';
 import { isEmpty, uid } from 'radash';
 
-import { EmailJob } from '#root/jobs/email.job';
-import { UserModel } from '#root/models/user.model';
-import { LoggerService } from '#root/services/logger.service';
-import { UserService } from '#root/services/user.service';
-import { co, mo } from '#root/utils/decorators';
+import { EmailJob } from '#hero/jobs/email.job';
+import { UserModel } from '#hero/models/user.model';
+import { UserService } from '#hero/services/user.service';
+import { co, mo } from '#hero/utils/decorators';
 
 @Http.controller({ path: '/users', scope: HttpControllerScope.SERVER, tags: ['users'] })
 export class UserController {
@@ -28,7 +28,7 @@ export class UserController {
 	})
 	private async list(
 		@mo() module: InstanceType<Class<MainModule>>,
-		@Service.inject() logger: LoggerService,
+		@Service.inject() logger: HermesLogger,
 		@Http.context() c: Context
 	): Promise<Array<User>> {
 		// logger.log('ctx', App.context.getStore());
@@ -58,13 +58,13 @@ export class UserController {
 
 	@Http.post({ response: UserModel.selectSchema })
 	private async post(
-		@Http.body(UserModel.createSchema) b: UserInsert,
+		@Http.body(UserModel.insertSchema) b: UserInsert,
 		@Http.query() q: any,
 		@co() c: UserController
 	) {
-		const user = await this.userService.userRepository.insert(b);
-		Event.emit('user:add', user);
-		return user;
+		// const user = await this.userService.userRepository.insert(b);
+		Event.emit('user:add', b);
+		return b;
 	}
 
 	@Http.patch({ response: UserModel.selectSchema })
@@ -79,10 +79,10 @@ export class UserController {
 	@Http.sse({ path: '/:id/notifications' })
 	private async sse(@Http.query() q: any, @Http.context() c: Context) {
 		while (isEmpty(this.userService.data)) {
-			await Bun.sleep(1);
+			await Bun.sleep(10);
 		}
 
-		return JSON.stringify(this.userService.data.shift());
+		return { data: this.userService.data.shift(), id: uid(12), event: 'notification' };
 	}
 
 	@Event.on({ event: 'user:add' })

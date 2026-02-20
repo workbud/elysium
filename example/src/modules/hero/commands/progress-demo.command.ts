@@ -4,6 +4,7 @@ import { Command, CommandArgumentType } from '@elysiumjs/core';
  * A command that demonstrates the use of the progress bar for operations with known steps.
  * @author Axel Nana <axel.nana@workbud.com>
  */
+@Command.register()
 export class ProgressDemoCommand extends Command {
 	public static readonly command: string = 'demo:progress';
 	public static readonly description: string =

@@ -1,4 +1,7 @@
 {
 	"projectName": "example",
-	"mono": true
+	"mono": false,
+	"modules": {
+		"hero": "src/modules/hero"
+	}
 }

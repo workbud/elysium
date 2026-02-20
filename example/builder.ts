@@ -2,7 +2,6 @@ try {
 	const result = await Bun.build({
 		entrypoints: ['./index.ts'],
 		outdir: './dist',
-		root: './src',
 		target: 'bun'
 	});
 

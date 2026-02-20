@@ -1,21 +1,21 @@
 import type { EventData } from '@elysiumjs/core';
 
 import { Event, Service, ServiceScope } from '@elysiumjs/core';
+import { HermesLogger } from '@elysiumjs/hermes';
 
-import { UserRepository } from '#root/repositories/user.repository';
-import { LoggerService } from '#root/services/logger.service';
+import { UserRepository } from '#hero/repositories/user.repository';
 
 @Service.register({ name: 'user.service', scope: ServiceScope.SINGLETON })
 export class UserService {
 	public constructor(
-		@Service.inject() public logger: LoggerService,
+		@Service.inject() public logger: HermesLogger,
 		@Service.inject() public userRepository: UserRepository
 	) {}
 
 	public data: any[] = [];
 
 	public say(sth: string) {
-		this.logger.log(sth);
+		this.logger.info(sth);
 	}
 
 	getUser(id: string) {
@@ -24,8 +24,8 @@ export class UserService {
 
 	@Event.on({ event: 'user:say' })
 	private static sayFromEvent(e: EventData<string>) {
-		const logger = Service.get(LoggerService)!;
-		logger.log(`from source: ${e.source} with event: ${e.data}`);
+		const logger = Service.get(HermesLogger)!;
+		logger.info(`from source: ${e.source} with event: ${e.data}`);
 		throw new Error('Custom error');
 	}
 }
