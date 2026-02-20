@@ -17,3 +17,5 @@ export type { DatabaseConnectionProps, DatabaseConnection } from './database';
 export { KeyvRedis } from './keyv-redis';
 export { Cache } from './cache';
 export type { CacheInterface } from './cache';
+export { createSchemaFromDrizzle, Model } from './model';
+export type { ModelClass } from './model';
