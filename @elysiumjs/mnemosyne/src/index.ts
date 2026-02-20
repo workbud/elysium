@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import type { DatabaseConnectionProps } from './database';
+
+import { Application, Event } from '@elysiumjs/core';
+
+import { Database } from './database';
+
 export { Database, DatabaseCache } from './database';
 export type { DatabaseConnectionProps, DatabaseConnection } from './database';
 export { KeyvRedis } from './keyv-redis';
@@ -24,3 +30,26 @@ export type { IdType, RepositoryInterface, RepositoryClass } from './repository'
 export * as Tenancy from './tenancy';
 export { TenantMiddleware, SimpleTenantMiddleware, StrictTenantMiddleware } from './tenancy';
 export type { TenancyConfig, TenancyMode, ModelTenancyConfig } from './tenancy';
+
+// Configuration types
+export interface MnemosyneConfig {
+	database?: {
+		default: string;
+		connections: Record<string, DatabaseConnectionProps>;
+	};
+}
+
+// Initialize on app launch
+Event.once('elysium:app:launched', () => {
+	const app = Application.instance;
+	const config = app.getConfig<MnemosyneConfig>('elysium:mnemosyne' as any);
+
+	if (config?.database) {
+		for (const [name, props] of Object.entries(config.database.connections)) {
+			Database.registerConnection(name, props);
+		}
+		if (Database.connectionExists(config.database.default)) {
+			Database.setDefaultConnection(config.database.default);
+		}
+	}
+});
