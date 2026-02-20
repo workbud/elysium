@@ -15,3 +15,5 @@
 export { Database, DatabaseCache } from './database';
 export type { DatabaseConnectionProps, DatabaseConnection } from './database';
 export { KeyvRedis } from './keyv-redis';
+export { Cache } from './cache';
+export type { CacheInterface } from './cache';
