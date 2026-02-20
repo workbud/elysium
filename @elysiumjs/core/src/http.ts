@@ -29,7 +29,6 @@ import { Elysia, sse as esse, t } from 'elysia';
 import { assign, isEmpty, objectify } from 'radash';
 
 import { Application } from './app';
-import { Database } from './database';
 import { applyMiddlewares, executeMiddlewareChain } from './middleware';
 import { Service } from './service';
 import { nextTick, Symbols } from './utils';
@@ -433,7 +432,7 @@ export namespace Http {
 						) => {
 							if (isTransactional) {
 								return function (...args: TArgs) {
-									return Database.getDefaultConnection().transaction((tx) => {
+									return Service.get<any>('db.connection.default')!.transaction((tx: any) => {
 										return Application.context.run(
 											new Map([
 												['tenant', c.tenant as unknown],

@@ -16,7 +16,6 @@ import type { SingletonBase } from 'elysia';
 
 export { type Elysia, type TSchema, type Static, t } from 'elysia';
 export { type AppContext, type ElysiumPlugin, Application } from './app';
-export { Cache } from './cache';
 export {
 	type CommandArgumentProps,
 	type CommandClass,
@@ -24,7 +23,6 @@ export {
 	CommandArgumentType
 } from './command';
 export { ConsoleFormat, InteractsWithConsole } from './console';
-export { Database } from './database';
 export { Env } from './env';
 export { type EventData, type EventHandler, Event } from './event';
 export { type LoggerInterface, ConsoleLogger } from './logger';
@@ -32,18 +30,8 @@ export { type Context, type Route, HttpControllerScope, Http } from './http';
 export { Job } from './job';
 export { Middleware } from './middleware';
 export { RequestLoggerMiddleware } from './middlewares/request-logger.middleware';
-export { type ModelClass, Model } from './model';
-export * as Tenancy from './tenancy';
-export { TenantMiddleware, SimpleTenantMiddleware, StrictTenantMiddleware } from './tenancy';
-export type { TenancyConfig, TenancyMode, ModelTenancyConfig } from './tenancy';
 export { type ModuleClass, Module } from './module';
 export { Redis } from './redis';
-export {
-	type IdType,
-	type RepositoryInterface,
-	type RepositoryClass,
-	Repository
-} from './repository';
 export { ServiceScope, Service } from './service';
 export {
 	type WampRegistrationOptions,

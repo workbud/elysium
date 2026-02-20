@@ -22,7 +22,6 @@ import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:te
 import { Elysia, t } from 'elysia';
 
 import { Application } from '../src/app';
-import { Database } from '../src/database';
 import * as Env from '../src/env';
 import { Event } from '../src/event';
 import { Middleware } from '../src/middleware';
@@ -290,93 +289,6 @@ describe('Application class', () => {
 			// Check if registration was called but default connection was not set
 			expect(registerConnectionSpy).toHaveBeenCalledWith('other', {
 				url: 'redis://localhost:6380'
-			});
-			expect(connectionExistsSpy).toHaveBeenCalledWith('missing');
-			expect(setDefaultConnectionSpy).not.toHaveBeenCalled();
-		});
-
-		it('should register Database connections if provided', () => {
-			const registerConnectionSpy = spyOn(Database, 'registerConnection');
-			const connectionExistsSpy = spyOn(Database, 'connectionExists');
-			const setDefaultConnectionSpy = spyOn(Database, 'setDefaultConnection');
-
-			// Create a test class with Database configuration
-			@Application.register({
-				database: {
-					default: 'main',
-					connections: {
-						main: { connection: process.env.DATABASE_TEST_URL! }
-					}
-				}
-			})
-			class TestApp extends Application {}
-
-			// Create an instance
-			new TestApp();
-
-			// Check if Database connections were registered
-			expect(registerConnectionSpy).toHaveBeenCalledWith('main', {
-				connection: process.env.DATABASE_TEST_URL!
-			});
-			expect(connectionExistsSpy).toHaveBeenCalledWith('main');
-			expect(setDefaultConnectionSpy).toHaveBeenCalledWith('main');
-		});
-
-		it('should set default Database connection only when the specified connection exists', () => {
-			// Mock Database methods
-			const registerConnectionSpy = spyOn(Database, 'registerConnection');
-			const connectionExistsSpy = spyOn(Database, 'connectionExists');
-			const setDefaultConnectionSpy = spyOn(Database, 'setDefaultConnection');
-
-			// First test: connection exists, should set default
-			connectionExistsSpy.mockReturnValueOnce(true);
-
-			// Create a test class with Database configuration where connection exists
-			@Application.register({
-				database: {
-					default: 'main',
-					connections: {
-						main: { connection: 'postgresql://user:pass@localhost:5432/db' }
-					}
-				}
-			})
-			class TestAppWithExistingConnection extends Application {}
-
-			// Create an instance
-			new TestAppWithExistingConnection();
-
-			// Check if default Database connection was set
-			expect(registerConnectionSpy).toHaveBeenCalledWith('main', {
-				connection: 'postgresql://user:pass@localhost:5432/db'
-			});
-			expect(connectionExistsSpy).toHaveBeenCalledWith('main');
-			expect(setDefaultConnectionSpy).toHaveBeenCalledWith('main');
-
-			// Clear calls for next test
-			registerConnectionSpy.mockClear();
-			connectionExistsSpy.mockClear();
-			setDefaultConnectionSpy.mockClear();
-
-			// Second test: connection doesn't exist, should not set default
-			connectionExistsSpy.mockReturnValueOnce(false);
-
-			// Create a test class with Database configuration where connection doesn't exist
-			@Application.register({
-				database: {
-					default: 'missing',
-					connections: {
-						other: { connection: 'postgresql://user:pass@localhost:5433/db2' }
-					}
-				}
-			})
-			class TestAppWithMissingConnection extends Application {}
-
-			// Create an instance
-			new TestAppWithMissingConnection();
-
-			// Check if registration was called but default connection was not set
-			expect(registerConnectionSpy).toHaveBeenCalledWith('other', {
-				connection: 'postgresql://user:pass@localhost:5433/db2'
 			});
 			expect(connectionExistsSpy).toHaveBeenCalledWith('missing');
 			expect(setDefaultConnectionSpy).not.toHaveBeenCalled();
