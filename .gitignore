@@ -23,6 +23,7 @@
 .agents
 .claude
 .junie
+.worktrees
 
 # debug
 **/npm-debug.log*
