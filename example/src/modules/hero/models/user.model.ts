@@ -1,4 +1,4 @@
-import { Model } from '@elysiumjs/core';
+import { Model } from '@elysiumjs/mnemosyne';
 import { boolean, integer, uuid, varchar } from 'drizzle-orm/pg-core';
 
 export class UserModel extends Model('users', {

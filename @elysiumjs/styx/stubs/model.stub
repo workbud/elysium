@@ -1,4 +1,4 @@
-import { Model } from '@elysiumjs/core';
+import { Model } from '@elysiumjs/mnemosyne';
 import { uuid } from 'drizzle-orm/pg-core';
 
 export class {name} extends Model('{table}', {

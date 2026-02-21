@@ -14,7 +14,8 @@
 
 import { basename } from 'node:path';
 
-import { Command, CommandArgumentType, Database } from '@elysiumjs/core';
+import { Command, CommandArgumentType } from '@elysiumjs/core';
+import { Database } from '@elysiumjs/mnemosyne';
 import prompts from 'prompts';
 import { alphabetical } from 'radash';
 
