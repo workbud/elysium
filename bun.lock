@@ -175,6 +175,7 @@
       "dependencies": {
         "@elysiumjs/core": "workspace:^",
         "@elysiumjs/hermes": "workspace:^",
+        "@elysiumjs/mnemosyne": "workspace:^",
         "@elysiumjs/styx": "workspace:^",
         "radash": "catalog:",
       },
