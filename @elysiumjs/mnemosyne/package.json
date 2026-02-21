@@ -25,7 +25,7 @@
 	"types": "dist/index.d.ts",
 	"sideEffects": ["./src/index.ts"],
 	"peerDependencies": {
-		"@elysiumjs/core": "^0.7.0"
+		"@elysiumjs/core": "workspace:^"
 	},
 	"dependencies": {
 		"cache-manager": "^7.2.3",

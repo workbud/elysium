@@ -17,11 +17,10 @@ import type { BunSQLDatabase } from 'drizzle-orm/bun-sql';
 import type { CacheConfig } from 'drizzle-orm/cache/core/types';
 import type { CacheInterface } from './cache';
 
+import { Service } from '@elysiumjs/core';
 import { getTableName, is, Table } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sql';
 import { Cache as DrizzleCache } from 'drizzle-orm/cache/core';
-
-import { Service } from '@elysiumjs/core';
 
 import { Cache } from './cache';
 

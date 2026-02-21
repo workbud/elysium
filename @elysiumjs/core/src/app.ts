@@ -213,10 +213,7 @@ export abstract class Application extends InteractsWithConsole {
 
 		Service.instance('elysium.app', this);
 
-		const { redis, wamp } = Reflect.getMetadata(
-			Symbols.app,
-			this.constructor
-		) as AppProps;
+		const { redis, wamp } = Reflect.getMetadata(Symbols.app, this.constructor) as AppProps;
 
 		if (redis) {
 			for (const connectionName in redis.connections) {

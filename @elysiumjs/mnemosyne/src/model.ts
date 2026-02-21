@@ -21,10 +21,9 @@ import type {
 } from 'drizzle-orm/pg-core';
 import type { TSchema } from 'elysia';
 
+import { Application } from '@elysiumjs/core';
 import { getTableConfig, pgTable } from 'drizzle-orm/pg-core';
 import { t } from 'elysia';
-
-import { Application } from '@elysiumjs/core';
 
 import { getCurrentTenant, wrapTenantSchema } from './tenancy';
 

@@ -19,9 +19,8 @@ import type { Class } from 'type-fest';
 import type { DatabaseConnection } from './database';
 import type { ModelClass } from './model';
 
-import { eq } from 'drizzle-orm';
-
 import { Application } from '@elysiumjs/core';
+import { eq } from 'drizzle-orm';
 
 import { Database } from './database';
 
