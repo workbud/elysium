@@ -121,6 +121,21 @@
         "@elysiumjs/core": "workspace:^",
       },
     },
+    "@elysiumjs/mnemosyne-drizzle": {
+      "name": "@elysiumjs/mnemosyne-drizzle",
+      "version": "0.1.0",
+      "dependencies": {
+        "drizzle-orm": "^0.44.6",
+      },
+      "devDependencies": {
+        "@elysiumjs/core": "workspace:*",
+        "@elysiumjs/mnemosyne": "workspace:*",
+      },
+      "peerDependencies": {
+        "@elysiumjs/core": "workspace:^",
+        "@elysiumjs/mnemosyne": "workspace:^",
+      },
+    },
     "@elysiumjs/plugin-sentry": {
       "name": "@elysiumjs/plugin-sentry",
       "version": "0.1.2",
@@ -285,6 +300,8 @@
     "@elysiumjs/hermes": ["@elysiumjs/hermes@workspace:@elysiumjs/hermes"],
 
     "@elysiumjs/mnemosyne": ["@elysiumjs/mnemosyne@workspace:@elysiumjs/mnemosyne"],
+
+    "@elysiumjs/mnemosyne-drizzle": ["@elysiumjs/mnemosyne-drizzle@workspace:@elysiumjs/mnemosyne-drizzle"],
 
     "@elysiumjs/plugin-sentry": ["@elysiumjs/plugin-sentry@workspace:@elysiumjs/plugin-sentry"],
 

@@ -1,0 +1,38 @@
+{
+	"name": "@elysiumjs/mnemosyne-drizzle",
+	"version": "0.1.0",
+	"license": "Apache-2.0",
+	"description": "Drizzle ORM driver for @elysiumjs/mnemosyne",
+	"private": false,
+	"author": "Workbud Technologies Inc.",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/workbud/elysium"
+	},
+	"homepage": "https://github.com/workbud/elysium",
+	"scripts": {
+		"format": "prettier --write \"./src/**/*.ts\"",
+		"clean": "rimraf dist",
+		"build:js": "bun build ./src/index.ts --outdir ./dist --target bun --packages external --root ./src --minify",
+		"build:ts": "tsc",
+		"build": "bun run clean && bun run build:js && bun run build:ts",
+		"typecheck": "tsc --noEmit",
+		"prepublishOnly": "bun run build"
+	},
+	"keywords": ["elysium", "database", "orm", "drizzle", "postgresql"],
+	"module": "dist/index.js",
+	"type": "module",
+	"types": "dist/index.d.ts",
+	"sideEffects": false,
+	"peerDependencies": {
+		"@elysiumjs/core": "workspace:^",
+		"@elysiumjs/mnemosyne": "workspace:^"
+	},
+	"dependencies": {
+		"drizzle-orm": "^0.44.6"
+	},
+	"devDependencies": {
+		"@elysiumjs/core": "workspace:*",
+		"@elysiumjs/mnemosyne": "workspace:*"
+	}
+}
